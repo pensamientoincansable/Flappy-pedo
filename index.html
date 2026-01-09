@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flappy Pedo - El Juego</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&display=swap');
+        
+        * {
+            font-family: 'Outfit', sans-serif;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #0d0d15 100%);
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        
+        #gameCanvas {
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            box-shadow: 0 0 60px rgba(139, 92, 246, 0.3), 0 0 100px rgba(59, 130, 246, 0.1);
+        }
+        
+        .btn-game {
+            background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 50%, #3b82f6 100%);
+            border: none;
+            box-shadow: 0 4px 20px rgba(139, 92, 246, 0.4);
+            transition: all 0.2s ease;
+            font-weight: 600;
+        }
+        
+        .btn-game:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(139, 92, 246, 0.6);
+        }
+        
+        .btn-game:active {
+            transform: translateY(0);
+        }
+        
+        .glass-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .title-gradient {
+            background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 25%, #ef4444 50%, #ec4899 75%, #8b5cf6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .subtitle-glow {
+            text-shadow: 0 0 20px rgba(139, 92, 246, 0.5);
+        }
+        
+        #cropModal {
+            backdrop-filter: blur(10px);
+        }
+        
+        .crop-area {
+            border: 3px dashed #8b5cf6;
+            cursor: move;
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center p-4">
+    <!-- Pantalla de inicio -->
+    <div id="startScreen" class="text-center">
+        <h1 class="text-5xl md:text-7xl font-extrabold title-gradient mb-2 tracking-tight">🚽 FLAPPY PEDO 💨</h1>
+        <p class="text-xl text-purple-300 mb-8 subtitle-glow font-semibold italic">"Que los gases te acompañen"</p>
+        
+        <div class="glass-card rounded-2xl p-6 mb-6 max-w-md mx-auto">
+            <h3 class="text-2xl text-white mb-4 font-semibold">📸 Personaliza tu rostro</h3>
+            <label class="btn-game text-lg px-6 py-3 rounded-xl cursor-pointer inline-block text-white">
+                Subir Foto
+                <input type="file" id="imageInput" accept="image/*" class="hidden">
+            </label>
+            <p class="text-gray-400 mt-3 text-sm">O juega con el rostro por defecto</p>
+            <div id="previewContainer" class="mt-4 hidden">
+                <img id="facePreview" class="w-24 h-24 rounded-full mx-auto border-4 border-purple-500 object-cover">
+                <p class="text-green-400 mt-2 font-semibold">✓ Rostro cargado</p>
+            </div>
+        </div>
+        
+        <button id="startBtn" class="btn-game text-2xl px-12 py-4 rounded-2xl text-white">
+            ¡JUGAR! 🎮
+        </button>
+        
+        <div class="mt-6 text-gray-500 text-sm">
+            <p>Toca la pantalla o presiona ESPACIO para... expulsar gases 💨</p>
+        </div>
+    </div>
+    
+    <!-- Canvas del juego -->
+    <canvas id="gameCanvas" class="hidden"></canvas>
+    
+    <!-- UI del juego -->
+    <div id="gameUI" class="hidden fixed top-4 left-1/2 -translate-x-1/2 text-center">
+        <div class="text-6xl text-white font-extrabold drop-shadow-lg" id="scoreDisplay">0</div>
+    </div>
+    
+    <!-- Game Over -->
+    <div id="gameOverScreen" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
+        <div class="glass-card rounded-3xl p-8 text-center border border-red-500/30">
+            <h2 class="text-5xl font-extrabold text-red-500 mb-4">💀 GAME OVER 💀</h2>
+            <p class="text-3xl text-white mb-2">Puntuación: <span id="finalScore" class="text-yellow-400 font-bold">0</span></p>
+            <p class="text-2xl text-gray-300 mb-6">Récord: <span id="highScore" class="text-green-400 font-bold">0</span></p>
+            <button id="restartBtn" class="btn-game text-xl px-8 py-3 rounded-xl text-white">
+                🔄 Reintentar
+            </button>
+            <br>
+            <button id="menuBtn" class="mt-4 bg-gray-700 hover:bg-gray-600 text-lg px-6 py-2 rounded-xl text-white transition-all">
+                🏠 Menú
+            </button>
+        </div>
+    </div>
+    
+    <!-- Modal de recorte -->
+    <div id="cropModal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+        <div class="glass-card rounded-3xl p-6 max-w-lg w-full">
+            <h3 class="text-2xl text-white mb-4 text-center font-semibold">Recorta tu rostro</h3>
+            <div class="relative overflow-hidden bg-gray-900 rounded-xl mb-4" style="height: 300px;">
+                <canvas id="cropCanvas" class="absolute"></canvas>
+                <div id="cropCircle" class="crop-area absolute rounded-full" style="width: 150px; height: 150px;"></div>
+            </div>
+            <div class="flex justify-center gap-4">
+                <button id="cancelCrop" class="bg-red-600 hover:bg-red-500 px-6 py-2 rounded-xl text-white text-lg font-semibold transition-all">
+                    Cancelar
+                </button>
+                <button id="confirmCrop" class="btn-game px-6 py-2 rounded-xl text-white text-lg font-semibold">
+                    ✓ Confirmar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ===== CONFIGURACIÓN =====
+        const CONFIG = {
+            gravity: 0.4,
+            jumpForce: -8,
+            pipeGap: 180,
+            pipeWidth: 80,
+            pipeSpeed: 3,
+            spawnInterval: 1800
+        };
+
+        // ===== ESTADO DEL JUEGO =====
+        let canvas, ctx;
+        let gameState = 'menu';
+        let score = 0;
+        let highScore = localStorage.getItem('flappyPedoHighScore') || 0;
+        let customFace = null;
+        let audioContext;
+
+        // Jugador - más grande
+        const player = {
+            x: 100,
+            y: 250,
+            width: 90,
+            height: 110,
+            velocity: 0,
+            rotation: 0,
+            isDead: false,
+            fartClouds: []
+        };
+
+        // Obstáculos
+        let pipes = [];
+        let lastPipeSpawn = 0;
+
+        // ===== AUDIO - SONIDO DE PEDO =====
+        function initAudio() {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        function playFartSound() {
+            if (!audioContext) initAudio();
+            
+            const duration = 0.15 + Math.random() * 0.1;
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            const filter = audioContext.createBiquadFilter();
+            
+            oscillator.type = 'sawtooth';
+            oscillator.frequency.setValueAtTime(80 + Math.random() * 40, audioContext.currentTime);
+            oscillator.frequency.exponentialRampToValueAtTime(40, audioContext.currentTime + duration);
+            
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(200, audioContext.currentTime);
+            
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
+            
+            oscillator.connect(filter);
+            filter.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + duration);
+            
+            const noise = audioContext.createOscillator();
+            const noiseGain = audioContext.createGain();
+            noise.type = 'square';
+            noise.frequency.setValueAtTime(60 + Math.random() * 30, audioContext.currentTime);
+            noiseGain.gain.setValueAtTime(0.1, audioContext.currentTime);
+            noiseGain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
+            noise.connect(noiseGain);
+            noiseGain.connect(audioContext.destination);
+            noise.start(audioContext.currentTime);
+            noise.stop(audioContext.currentTime + duration);
+        }
+
+        function playDeathSound() {
+            if (!audioContext) initAudio();
+            
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(400, audioContext.currentTime);
+            oscillator.frequency.exponentialRampToValueAtTime(100, audioContext.currentTime + 0.5);
+            
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.5);
+        }
+
+        // ===== MANEJO DE IMAGEN =====
+        const imageInput = document.getElementById('imageInput');
+        const cropModal = document.getElementById('cropModal');
+        const cropCanvas = document.getElementById('cropCanvas');
+        const cropCtx = cropCanvas.getContext('2d');
+        const cropCircle = document.getElementById('cropCircle');
+        
+        let uploadedImage = null;
+        let cropPosition = { x: 75, y: 75 };
+        let isDragging = false;
+        let dragOffset = { x: 0, y: 0 };
+
+        imageInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    uploadedImage = new Image();
+                    uploadedImage.onload = () => {
+                        showCropModal();
+                    };
+                    uploadedImage.src = event.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        function showCropModal() {
+            cropModal.classList.remove('hidden');
+            
+            const container = cropCanvas.parentElement;
+            const containerWidth = container.offsetWidth;
+            const containerHeight = 300;
+            
+            const scale = Math.min(containerWidth / uploadedImage.width, containerHeight / uploadedImage.height);
+            cropCanvas.width = uploadedImage.width * scale;
+            cropCanvas.height = uploadedImage.height * scale;
+            
+            cropCtx.drawImage(uploadedImage, 0, 0, cropCanvas.width, cropCanvas.height);
+            
+            cropPosition = {
+                x: (cropCanvas.width - 150) / 2,
+                y: (cropCanvas.height - 150) / 2
+            };
+            updateCropCircle();
+        }
+
+        function updateCropCircle() {
+            cropCircle.style.left = cropPosition.x + 'px';
+            cropCircle.style.top = cropPosition.y + 'px';
+        }
+
+        cropCircle.addEventListener('mousedown', startDrag);
+        cropCircle.addEventListener('touchstart', startDrag);
+        document.addEventListener('mousemove', drag);
+        document.addEventListener('touchmove', drag);
+        document.addEventListener('mouseup', endDrag);
+        document.addEventListener('touchend', endDrag);
+
+        function startDrag(e) {
+            isDragging = true;
+            const rect = cropCircle.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            dragOffset = {
+                x: clientX - rect.left,
+                y: clientY - rect.top
+            };
+        }
+
+        function drag(e) {
+            if (!isDragging) return;
+            e.preventDefault();
+            
+            const container = cropCanvas.parentElement;
+            const rect = container.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            
+            cropPosition.x = Math.max(0, Math.min(cropCanvas.width - 150, clientX - rect.left - dragOffset.x));
+            cropPosition.y = Math.max(0, Math.min(cropCanvas.height - 150, clientY - rect.top - dragOffset.y));
+            
+            updateCropCircle();
+        }
+
+        function endDrag() {
+            isDragging = false;
+        }
+
+        document.getElementById('cancelCrop').addEventListener('click', () => {
+            cropModal.classList.add('hidden');
+        });
+
+        document.getElementById('confirmCrop').addEventListener('click', () => {
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = 150;
+            tempCanvas.height = 150;
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            const scale = cropCanvas.width / uploadedImage.width;
+            const sourceX = cropPosition.x / scale;
+            const sourceY = cropPosition.y / scale;
+            const sourceSize = 150 / scale;
+            
+            tempCtx.beginPath();
+            tempCtx.arc(75, 75, 75, 0, Math.PI * 2);
+            tempCtx.closePath();
+            tempCtx.clip();
+            
+            tempCtx.drawImage(uploadedImage, sourceX, sourceY, sourceSize, sourceSize, 0, 0, 150, 150);
+            
+            customFace = new Image();
+            customFace.src = tempCanvas.toDataURL();
+            
+            document.getElementById('facePreview').src = customFace.src;
+            document.getElementById('previewContainer').classList.remove('hidden');
+            
+            cropModal.classList.add('hidden');
+        });
+
+        // ===== INICIALIZACIÓN DEL JUEGO =====
+        function initGame() {
+            canvas = document.getElementById('gameCanvas');
+            ctx = canvas.getContext('2d');
+            
+            canvas.width = 400;
+            canvas.height = 600;
+            
+            document.getElementById('startScreen').classList.add('hidden');
+            canvas.classList.remove('hidden');
+            document.getElementById('gameUI').classList.remove('hidden');
+            
+            resetGame();
+            gameState = 'playing';
+            gameLoop();
+        }
+
+        function resetGame() {
+            player.y = 250;
+            player.velocity = 0;
+            player.rotation = 0;
+            player.isDead = false;
+            player.fartClouds = [];
+            pipes = [];
+            score = 0;
+            lastPipeSpawn = 0;
+            updateScoreDisplay();
+        }
+
+        // ===== CONTROLES =====
+        function jump() {
+            if (gameState !== 'playing' || player.isDead) return;
+            
+            player.velocity = CONFIG.jumpForce;
+            playFartSound();
+            
+            player.fartClouds.push({
+                x: player.x,
+                y: player.y + player.height - 5,
+                size: 20,
+                opacity: 1,
+                particles: Array.from({length: 6}, () => ({
+                    x: Math.random() * 25 - 12,
+                    y: Math.random() * 15,
+                    size: 6 + Math.random() * 12,
+                    speed: 1.5 + Math.random() * 2.5
+                }))
+            });
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                jump();
+            }
+        });
+
+        canvas?.addEventListener('click', jump);
+        canvas?.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            jump();
+        });
+
+        // ===== GAME LOOP =====
+        function gameLoop() {
+            if (gameState !== 'playing') return;
+            
+            update();
+            render();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function update() {
+            if (player.isDead) return;
+            
+            player.velocity += CONFIG.gravity;
+            player.y += player.velocity;
+            
+            player.rotation = Math.min(Math.max(player.velocity * 3, -30), 90);
+            
+            player.fartClouds.forEach(cloud => {
+                cloud.opacity -= 0.02;
+                cloud.size += 0.5;
+                cloud.particles.forEach(p => {
+                    p.x -= p.speed;
+                    p.y += (Math.random() - 0.5) * 0.5;
+                });
+            });
+            player.fartClouds = player.fartClouds.filter(c => c.opacity > 0);
+            
+            const now = Date.now();
+            if (now - lastPipeSpawn > CONFIG.spawnInterval) {
+                spawnPipe();
+                lastPipeSpawn = now;
+            }
+            
+            pipes.forEach(pipe => {
+                pipe.x -= CONFIG.pipeSpeed;
+                
+                if (!pipe.scored && pipe.x + CONFIG.pipeWidth < player.x) {
+                    score++;
+                    pipe.scored = true;
+                    updateScoreDisplay();
+                }
+            });
+            
+            pipes = pipes.filter(p => p.x > -CONFIG.pipeWidth);
+            
+            checkCollisions();
+        }
+
+        function spawnPipe() {
+            const minGapY = 120;
+            const maxGapY = canvas.height - CONFIG.pipeGap - 120;
+            const gapY = minGapY + Math.random() * (maxGapY - minGapY);
+            
+            pipes.push({
+                x: canvas.width,
+                gapY: gapY,
+                scored: false
+            });
+        }
+
+        function checkCollisions() {
+            if (player.y < 0 || player.y + player.height > canvas.height) {
+                die();
+                return;
+            }
+            
+            const playerBox = {
+                x: player.x + 15,
+                y: player.y + 15,
+                width: player.width - 30,
+                height: player.height - 30
+            };
+            
+            for (const pipe of pipes) {
+                if (rectCollision(playerBox, {
+                    x: pipe.x,
+                    y: 0,
+                    width: CONFIG.pipeWidth,
+                    height: pipe.gapY
+                })) {
+                    die();
+                    return;
+                }
+                
+                if (rectCollision(playerBox, {
+                    x: pipe.x,
+                    y: pipe.gapY + CONFIG.pipeGap,
+                    width: CONFIG.pipeWidth,
+                    height: canvas.height - pipe.gapY - CONFIG.pipeGap
+                })) {
+                    die();
+                    return;
+                }
+            }
+        }
+
+        function rectCollision(a, b) {
+            return a.x < b.x + b.width &&
+                   a.x + a.width > b.x &&
+                   a.y < b.y + b.height &&
+                   a.y + a.height > b.y;
+        }
+
+        function die() {
+            player.isDead = true;
+            playDeathSound();
+            
+            for (let i = 0; i < 4; i++) {
+                setTimeout(() => {
+                    player.fartClouds.push({
+                        x: player.x - 10 + i * 8,
+                        y: player.y + player.height,
+                        size: 35 + i * 12,
+                        opacity: 1,
+                        particles: Array.from({length: 10}, () => ({
+                            x: Math.random() * 40 - 20,
+                            y: Math.random() * 25,
+                            size: 10 + Math.random() * 18,
+                            speed: 2.5 + Math.random() * 3
+                        }))
+                    });
+                }, i * 80);
+            }
+            
+            setTimeout(() => {
+                gameState = 'gameover';
+                showGameOver();
+            }, 1000);
+        }
+
+        function showGameOver() {
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('flappyPedoHighScore', highScore);
+            }
+            
+            document.getElementById('finalScore').textContent = score;
+            document.getElementById('highScore').textContent = highScore;
+            document.getElementById('gameOverScreen').classList.remove('hidden');
+        }
+
+        // ===== RENDERIZADO =====
+        function render() {
+            // Fondo degradado de baño
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, '#e0f2fe');
+            gradient.addColorStop(0.5, '#bae6fd');
+            gradient.addColorStop(1, '#7dd3fc');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Patrón de azulejos
+            drawTiles();
+            
+            // Suelo
+            ctx.fillStyle = '#1e293b';
+            ctx.fillRect(0, canvas.height - 20, canvas.width, 20);
+            ctx.fillStyle = '#334155';
+            ctx.fillRect(0, canvas.height - 25, canvas.width, 5);
+            
+            // Retretes y cadenas
+            drawToilets();
+            
+            // Nubes de pedo
+            drawFartClouds();
+            
+            // Jugador
+            drawPlayer();
+        }
+
+        function drawTiles() {
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.lineWidth = 1;
+            const tileSize = 40;
+            for (let x = 0; x < canvas.width; x += tileSize) {
+                for (let y = 0; y < canvas.height; y += tileSize) {
+                    ctx.strokeRect(x, y, tileSize, tileSize);
+                }
+            }
+        }
+
+        function drawToilets() {
+            pipes.forEach(pipe => {
+                // ===== CADENA DE RETRETE ARRIBA (colgando) =====
+                const chainX = pipe.x + CONFIG.pipeWidth / 2;
+                const chainEndY = pipe.gapY;
+                
+                // Cadena metálica
+                ctx.strokeStyle = '#94a3b8';
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.moveTo(chainX, 0);
+                ctx.lineTo(chainX, chainEndY - 40);
+                ctx.stroke();
+                
+                // Eslabones de la cadena
+                for (let y = 10; y < chainEndY - 50; y += 20) {
+                    ctx.beginPath();
+                    ctx.ellipse(chainX, y, 6, 10, 0, 0, Math.PI * 2);
+                    ctx.strokeStyle = '#64748b';
+                    ctx.lineWidth = 3;
+                    ctx.stroke();
+                }
+                
+                // Tirador de cadena (bolita)
+                ctx.beginPath();
+                ctx.arc(chainX, chainEndY - 30, 12, 0, Math.PI * 2);
+                ctx.fillStyle = '#f1f5f9';
+                ctx.fill();
+                ctx.strokeStyle = '#cbd5e1';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                // Mini retrete colgante (cisterna)
+                const cisternaY = chainEndY - 60;
+                ctx.fillStyle = '#f8fafc';
+                ctx.fillRect(pipe.x + 5, 0, CONFIG.pipeWidth - 10, chainEndY - 30);
+                
+                // Borde de cisterna
+                ctx.fillStyle = '#e2e8f0';
+                ctx.fillRect(pipe.x, chainEndY - 45, CONFIG.pipeWidth, 15);
+                ctx.strokeStyle = '#94a3b8';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(pipe.x, chainEndY - 45, CONFIG.pipeWidth, 15);
+                
+                // ===== RETRETE GIGANTE ABAJO =====
+                const toiletY = pipe.gapY + CONFIG.pipeGap;
+                const toiletHeight = canvas.height - toiletY;
+                
+                // Tapa del retrete (la parte de arriba ovalada)
+                ctx.fillStyle = '#f8fafc';
+                ctx.beginPath();
+                ctx.ellipse(pipe.x + CONFIG.pipeWidth / 2, toiletY + 15, CONFIG.pipeWidth / 2 + 8, 20, 0, Math.PI, 0);
+                ctx.fill();
+                ctx.strokeStyle = '#cbd5e1';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                
+                // Asiento del retrete
+                ctx.fillStyle = '#f1f5f9';
+                ctx.beginPath();
+                ctx.ellipse(pipe.x + CONFIG.pipeWidth / 2, toiletY + 20, CONFIG.pipeWidth / 2, 18, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = '#94a3b8';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                // Agujero negro del retrete
+                ctx.fillStyle = '#1e293b';
+                ctx.beginPath();
+                ctx.ellipse(pipe.x + CONFIG.pipeWidth / 2, toiletY + 22, CONFIG.pipeWidth / 3, 12, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Base del retrete (taza)
+                ctx.fillStyle = '#f8fafc';
+                ctx.beginPath();
+                ctx.moveTo(pipe.x - 5, toiletY + 35);
+                ctx.lineTo(pipe.x + CONFIG.pipeWidth + 5, toiletY + 35);
+                ctx.lineTo(pipe.x + CONFIG.pipeWidth, toiletY + toiletHeight);
+                ctx.lineTo(pipe.x, toiletY + toiletHeight);
+                ctx.closePath();
+                ctx.fill();
+                ctx.strokeStyle = '#e2e8f0';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                // Detalles de la taza
+                ctx.strokeStyle = '#cbd5e1';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(pipe.x + 10, toiletY + 60);
+                ctx.lineTo(pipe.x + 10, toiletY + toiletHeight - 20);
+                ctx.moveTo(pipe.x + CONFIG.pipeWidth - 10, toiletY + 60);
+                ctx.lineTo(pipe.x + CONFIG.pipeWidth - 10, toiletY + toiletHeight - 20);
+                ctx.stroke();
+                
+                // Agua en el retrete
+                ctx.fillStyle = 'rgba(56, 189, 248, 0.4)';
+                ctx.beginPath();
+                ctx.ellipse(pipe.x + CONFIG.pipeWidth / 2, toiletY + 25, CONFIG.pipeWidth / 3 - 3, 8, 0, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        function drawFartClouds() {
+            player.fartClouds.forEach(cloud => {
+                cloud.particles.forEach(p => {
+                    ctx.beginPath();
+                    ctx.arc(
+                        cloud.x + p.x,
+                        cloud.y + p.y,
+                        p.size * (cloud.size / 20),
+                        0,
+                        Math.PI * 2
+                    );
+                    // Color marrón verdoso para el pedo
+                    const g = Math.floor(100 + Math.random() * 50);
+                    ctx.fillStyle = `rgba(120, ${g}, 40, ${cloud.opacity * 0.6})`;
+                    ctx.fill();
+                    
+                    ctx.strokeStyle = `rgba(80, 120, 40, ${cloud.opacity * 0.3})`;
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                });
+            });
+        }
+
+        function drawPlayer() {
+            ctx.save();
+            ctx.translate(player.x + player.width / 2, player.y + player.height / 2);
+            ctx.rotate(player.rotation * Math.PI / 180);
+            
+            const offsetX = -player.width / 2;
+            const offsetY = -player.height / 2;
+            
+            // ===== PERSONA SENTADA EN RETRETE LEYENDO REVISTA =====
+            
+            // Piernas (dobladas como sentado)
+            ctx.strokeStyle = '#fcd34d';
+            ctx.lineWidth = 8;
+            ctx.lineCap = 'round';
+            
+            // Pierna izquierda
+            ctx.beginPath();
+            ctx.moveTo(offsetX + 30, offsetY + 75);
+            ctx.quadraticCurveTo(offsetX + 15, offsetY + 90, offsetX + 20, offsetY + 105);
+            ctx.stroke();
+            
+            // Pierna derecha
+            ctx.beginPath();
+            ctx.moveTo(offsetX + 60, offsetY + 75);
+            ctx.quadraticCurveTo(offsetX + 75, offsetY + 90, offsetX + 70, offsetY + 105);
+            ctx.stroke();
+            
+            // Pies
+            ctx.fillStyle = '#92400e';
+            ctx.beginPath();
+            ctx.ellipse(offsetX + 18, offsetY + 108, 8, 5, -0.3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(offsetX + 72, offsetY + 108, 8, 5, 0.3, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Cuerpo (torso)
+            ctx.fillStyle = '#3b82f6';
+            ctx.beginPath();
+            ctx.ellipse(offsetX + 45, offsetY + 60, 22, 25, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#2563eb';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            // Brazos sosteniendo revista
+            ctx.strokeStyle = '#fcd34d';
+            ctx.lineWidth = 7;
+            ctx.lineCap = 'round';
+            
+            // Brazo izquierdo
+            ctx.beginPath();
+            ctx.moveTo(offsetX + 25, offsetY + 55);
+            ctx.quadraticCurveTo(offsetX + 15, offsetY + 60, offsetX + 25, offsetY + 70);
+            ctx.stroke();
+            
+            // Brazo derecho
+            ctx.beginPath();
+            ctx.moveTo(offsetX + 65, offsetY + 55);
+            ctx.quadraticCurveTo(offsetX + 75, offsetY + 60, offsetX + 65, offsetY + 70);
+            ctx.stroke();
+            
+            // Revista (cubriendo zona)
+            ctx.fillStyle = '#ef4444';
+            ctx.fillRect(offsetX + 20, offsetY + 58, 50, 35);
+            ctx.strokeStyle = '#b91c1c';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(offsetX + 20, offsetY + 58, 50, 35);
+            
+            // Líneas de texto en revista
+            ctx.fillStyle = '#fef2f2';
+            for (let i = 0; i < 4; i++) {
+                ctx.fillRect(offsetX + 25, offsetY + 65 + i * 7, 40, 3);
+            }
+            
+            // Título de revista
+            ctx.fillStyle = '#fef2f2';
+            ctx.font = 'bold 8px Arial';
+            ctx.fillText('WC NEWS', offsetX + 28, offsetY + 70);
+            
+            // Manos
+            ctx.fillStyle = '#fcd34d';
+            ctx.beginPath();
+            ctx.arc(offsetX + 22, offsetY + 72, 6, 0, Math.PI * 2);
+            ctx.arc(offsetX + 68, offsetY + 72, 6, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // ===== ROSTRO GRANDE =====
+            const faceY = offsetY + 22;
+            const faceX = offsetX + 45;
+            const faceSize = 50; // Rostro mucho más grande
+            
+            if (customFace) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(faceX, faceY, faceSize / 2, 0, Math.PI * 2);
+                ctx.clip();
+                ctx.drawImage(customFace, faceX - faceSize/2, faceY - faceSize/2, faceSize, faceSize);
+                ctx.restore();
+                
+                // Borde del rostro
+                ctx.beginPath();
+                ctx.arc(faceX, faceY, faceSize / 2, 0, Math.PI * 2);
+                ctx.strokeStyle = '#e2e8f0';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                
+                if (player.isDead) {
+                    // Overlay rojo
+                    ctx.fillStyle = 'rgba(220, 38, 38, 0.6)';
+                    ctx.beginPath();
+                    ctx.arc(faceX, faceY, faceSize / 2, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // X en los ojos
+                    ctx.strokeStyle = '#000';
+                    ctx.lineWidth = 4;
+                    // Ojo izquierdo X
+                    ctx.beginPath();
+                    ctx.moveTo(faceX - 14, faceY - 10);
+                    ctx.lineTo(faceX - 4, faceY);
+                    ctx.moveTo(faceX - 4, faceY - 10);
+                    ctx.lineTo(faceX - 14, faceY);
+                    ctx.stroke();
+                    // Ojo derecho X
+                    ctx.beginPath();
+                    ctx.moveTo(faceX + 4, faceY - 10);
+                    ctx.lineTo(faceX + 14, faceY);
+                    ctx.moveTo(faceX + 14, faceY - 10);
+                    ctx.lineTo(faceX + 4, faceY);
+                    ctx.stroke();
+                    
+                    // Boca en shock
+                    ctx.beginPath();
+                    ctx.arc(faceX, faceY + 12, 8, 0, Math.PI * 2);
+                    ctx.fillStyle = '#000';
+                    ctx.fill();
+                }
+            } else {
+                // Rostro por defecto
+                ctx.beginPath();
+                ctx.arc(faceX, faceY, faceSize / 2, 0, Math.PI * 2);
+                ctx.fillStyle = '#fcd34d';
+                ctx.fill();
+                ctx.strokeStyle = '#f59e0b';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                
+                if (player.isDead) {
+                    // Cara muerta
+                    ctx.strokeStyle = '#dc2626';
+                    ctx.lineWidth = 4;
+                    // Ojo izquierdo X
+                    ctx.beginPath();
+                    ctx.moveTo(faceX - 14, faceY - 10);
+                    ctx.lineTo(faceX - 4, faceY);
+                    ctx.moveTo(faceX - 4, faceY - 10);
+                    ctx.lineTo(faceX - 14, faceY);
+                    ctx.stroke();
+                    // Ojo derecho X
+                    ctx.beginPath();
+                    ctx.moveTo(faceX + 4, faceY - 10);
+                    ctx.lineTo(faceX + 14, faceY);
+                    ctx.moveTo(faceX + 14, faceY - 10);
+                    ctx.lineTo(faceX + 4, faceY);
+                    ctx.stroke();
+                    
+                    // Lengua afuera
+                    ctx.fillStyle = '#f87171';
+                    ctx.beginPath();
+                    ctx.ellipse(faceX, faceY + 18, 6, 10, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = '#ef4444';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                } else {
+                    // Ojos normales (esfuerzo)
+                    ctx.fillStyle = '#FFF';
+                    ctx.beginPath();
+                    ctx.ellipse(faceX - 10, faceY - 5, 8, 10, 0, 0, Math.PI * 2);
+                    ctx.ellipse(faceX + 10, faceY - 5, 8, 10, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = '#000';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    
+                    // Pupilas mirando hacia arriba (esfuerzo)
+                    ctx.fillStyle = '#000';
+                    ctx.beginPath();
+                    ctx.arc(faceX - 10, faceY - 7, 4, 0, Math.PI * 2);
+                    ctx.arc(faceX + 10, faceY - 7, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Cejas de esfuerzo
+                    ctx.strokeStyle = '#92400e';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.moveTo(faceX - 16, faceY - 14);
+                    ctx.lineTo(faceX - 4, faceY - 18);
+                    ctx.moveTo(faceX + 4, faceY - 18);
+                    ctx.lineTo(faceX + 16, faceY - 14);
+                    ctx.stroke();
+                    
+                    // Boca de esfuerzo (apretada)
+                    ctx.strokeStyle = '#92400e';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.moveTo(faceX - 10, faceY + 12);
+                    ctx.quadraticCurveTo(faceX, faceY + 8, faceX + 10, faceY + 12);
+                    ctx.stroke();
+                    
+                    // Gotas de sudor
+                    ctx.fillStyle = '#7dd3fc';
+                    ctx.beginPath();
+                    ctx.ellipse(faceX - 22, faceY - 5, 3, 5, 0.3, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Mejillas rojas de esfuerzo
+                    ctx.fillStyle = 'rgba(248, 113, 113, 0.5)';
+                    ctx.beginPath();
+                    ctx.arc(faceX - 18, faceY + 5, 6, 0, Math.PI * 2);
+                    ctx.arc(faceX + 18, faceY + 5, 6, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+            
+            // Efecto de gas saliendo cuando salta
+            if (!player.isDead && player.velocity < -2) {
+                ctx.strokeStyle = 'rgba(100, 140, 80, 0.7)';
+                ctx.lineWidth = 3;
+                for (let i = 0; i < 4; i++) {
+                    ctx.beginPath();
+                    ctx.moveTo(offsetX + 35 + i * 5, offsetY + 100);
+                    ctx.quadraticCurveTo(
+                        offsetX + 30 + i * 3, 
+                        offsetY + 110 + i * 3,
+                        offsetX + 25 - i * 5, 
+                        offsetY + 115 + i * 5
+                    );
+                    ctx.stroke();
+                }
+            }
+            
+            ctx.restore();
+        }
+
+        function updateScoreDisplay() {
+            document.getElementById('scoreDisplay').textContent = score;
+        }
+
+        // ===== BOTONES =====
+        document.getElementById('startBtn').addEventListener('click', initGame);
+        
+        document.getElementById('restartBtn').addEventListener('click', () => {
+            document.getElementById('gameOverScreen').classList.add('hidden');
+            resetGame();
+            gameState = 'playing';
+            gameLoop();
+        });
+        
+        document.getElementById('menuBtn').addEventListener('click', () => {
+            document.getElementById('gameOverScreen').classList.add('hidden');
+            document.getElementById('gameUI').classList.add('hidden');
+            canvas.classList.add('hidden');
+            document.getElementById('startScreen').classList.remove('hidden');
+            gameState = 'menu';
+        });
+
+        document.addEventListener('click', () => {
+            if (!audioContext) initAudio();
+        }, { once: true });
+    </script>
+</body>
+</html>
