@@ -12,6 +12,7 @@
         
         * {
             font-family: 'Outfit', sans-serif;
+            -webkit-tap-highlight-color: transparent;
         }
         
         body {
@@ -22,10 +23,6 @@
             -webkit-user-select: none;
             user-select: none;
             touch-action: manipulation;
-        }
-        
-        * {
-            -webkit-tap-highlight-color: transparent;
         }
         
         #gameCanvas {
@@ -110,6 +107,15 @@
             0%, 100% { transform: scale(1); }
             50% { transform: scale(1.05); }
         }
+        
+        .tap-hint {
+            animation: bounce 1s ease-in-out infinite;
+        }
+        
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
     </style>
 </head>
 <body class="flex flex-col items-center justify-center p-4">
@@ -178,7 +184,7 @@
         </div>
     </div>
     
-    <!-- Modal de recorte mejorado -->
+    <!-- Modal de recorte -->
     <div id="cropModal" class="hidden fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4">
         <div class="glass-card rounded-3xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
             <h3 class="text-2xl text-white mb-4 text-center font-semibold">✂️ Recorta tu rostro</h3>
@@ -188,7 +194,6 @@
                 <div id="cropCircle" class="crop-area absolute rounded-full"></div>
             </div>
             
-            <!-- Controles de zoom y tamaño -->
             <div class="space-y-4 mb-4">
                 <div class="slider-container">
                     <label class="text-white text-sm mb-1 block">🔍 Zoom de imagen</label>
@@ -223,34 +228,35 @@
     </div>
 
     <script>
-        // ===== CONFIGURACIÓN =====
+        // ===== CONFIGURACIÓN DEL JUEGO =====
         const CONFIG = {
-            gravity: 0.4,
-            jumpForce: -8,
+            gravity: 0.35,
+            jumpForce: -7.5,
             pipeGap: 180,
             pipeWidth: 80,
-            baseSpeed: 3,
-            pipeSpeed: 3,
-            spawnInterval: 1800,
+            initialSpeed: 1.5,
+            baseSpeed: 1.5,
+            pipeSpeed: 1.5,
+            spawnInterval: 2200,
             pipesPerLevel: 15,
             maxLevel: 10,
-            speedIncrement: 0.3
+            speedIncrement: 0.25
         };
 
-        // ===== ESTADO DEL JUEGO =====
+        // ===== VARIABLES GLOBALES =====
         let canvas, ctx;
-        let gameState = 'menu';
+        let gameState = 'menu'; // menu, ready, playing, gameover
         let score = 0;
         let level = 1;
-        let pipesInLevel = 0;
         let totalPipesPassed = 0;
-        let highScore = localStorage.getItem('flappyPedoHighScore') || 0;
+        let highScore = parseInt(localStorage.getItem('flappyPedoHighScore')) || 0;
         let customFace = null;
-        let audioContext;
+        let audioContext = null;
+        let animationId = null;
 
-        // Jugador
+        // Estado del jugador
         const player = {
-            x: 100,
+            x: -80,
             y: 250,
             width: 90,
             height: 110,
@@ -260,373 +266,810 @@
             fartClouds: []
         };
 
-        // Obstáculos
+        // Obstáculos y efectos
         let pipes = [];
+        let meltingDrops = [];
         let lastPipeSpawn = 0;
         let pipeCounter = 0;
-        
-        // Animación
         let animationTime = 0;
-        let meltingDrops = [];
 
-        // ===== AUDIO =====
-        function initAudio() {
-            audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        }
+        // Animación de puerta
+        let doorAnimation = {
+            active: false,
+            progress: 0,
+            doorOpen: 0,
+            playerEntered: false
+        };
 
-        function playFartSound() {
-            if (!audioContext) initAudio();
+        // ===== SISTEMA DE AUDIO =====
+        const Audio = {
+            init() {
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            },
             
-            const duration = 0.15 + Math.random() * 0.1;
-            const oscillator = audioContext.createOscillator();
-            const gainNode = audioContext.createGain();
-            const filter = audioContext.createBiquadFilter();
+            playFart() {
+                this.init();
+                const duration = 0.12 + Math.random() * 0.08;
+                
+                const osc = audioContext.createOscillator();
+                const gain = audioContext.createGain();
+                const filter = audioContext.createBiquadFilter();
+                
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(70 + Math.random() * 30, audioContext.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(35, audioContext.currentTime + duration);
+                
+                filter.type = 'lowpass';
+                filter.frequency.value = 180;
+                
+                gain.gain.setValueAtTime(0.25, audioContext.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
+                
+                osc.connect(filter).connect(gain).connect(audioContext.destination);
+                osc.start();
+                osc.stop(audioContext.currentTime + duration);
+            },
             
-            oscillator.type = 'sawtooth';
-            oscillator.frequency.setValueAtTime(80 + Math.random() * 40, audioContext.currentTime);
-            oscillator.frequency.exponentialRampToValueAtTime(40, audioContext.currentTime + duration);
+            playLevelUp() {
+                this.init();
+                [523, 659, 784, 1047].forEach((freq, i) => {
+                    setTimeout(() => {
+                        const osc = audioContext.createOscillator();
+                        const gain = audioContext.createGain();
+                        osc.type = 'sine';
+                        osc.frequency.value = freq;
+                        gain.gain.setValueAtTime(0.15, audioContext.currentTime);
+                        gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.15);
+                        osc.connect(gain).connect(audioContext.destination);
+                        osc.start();
+                        osc.stop(audioContext.currentTime + 0.15);
+                    }, i * 80);
+                });
+            },
             
-            filter.type = 'lowpass';
-            filter.frequency.setValueAtTime(200, audioContext.currentTime);
+            playDeath() {
+                this.init();
+                const osc = audioContext.createOscillator();
+                const gain = audioContext.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(350, audioContext.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(80, audioContext.currentTime + 0.4);
+                gain.gain.setValueAtTime(0.25, audioContext.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.4);
+                osc.connect(gain).connect(audioContext.destination);
+                osc.start();
+                osc.stop(audioContext.currentTime + 0.4);
+            },
             
-            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
-            
-            oscillator.connect(filter);
-            filter.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-            
-            oscillator.start(audioContext.currentTime);
-            oscillator.stop(audioContext.currentTime + duration);
-            
-            const noise = audioContext.createOscillator();
-            const noiseGain = audioContext.createGain();
-            noise.type = 'square';
-            noise.frequency.setValueAtTime(60 + Math.random() * 30, audioContext.currentTime);
-            noiseGain.gain.setValueAtTime(0.1, audioContext.currentTime);
-            noiseGain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
-            noise.connect(noiseGain);
-            noiseGain.connect(audioContext.destination);
-            noise.start(audioContext.currentTime);
-            noise.stop(audioContext.currentTime + duration);
-        }
+            playDoorOpen() {
+                this.init();
+                const osc = audioContext.createOscillator();
+                const gain = audioContext.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(200, audioContext.currentTime);
+                osc.frequency.linearRampToValueAtTime(400, audioContext.currentTime + 0.3);
+                gain.gain.setValueAtTime(0.1, audioContext.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+                osc.connect(gain).connect(audioContext.destination);
+                osc.start();
+                osc.stop(audioContext.currentTime + 0.3);
+            }
+        };
 
-        function playLevelUpSound() {
-            if (!audioContext) initAudio();
+        // ===== MANEJO DE IMAGEN =====
+        const ImageCropper = {
+            uploadedImage: null,
+            cropPosition: { x: 75, y: 75 },
+            isDragging: false,
+            dragOffset: { x: 0, y: 0 },
+            currentZoom: 100,
+            cropSize: 150,
+            imageOffset: { x: 0, y: 0 },
             
-            const notes = [523, 659, 784, 1047];
-            notes.forEach((freq, i) => {
-                setTimeout(() => {
-                    const osc = audioContext.createOscillator();
-                    const gain = audioContext.createGain();
-                    osc.type = 'sine';
-                    osc.frequency.value = freq;
-                    gain.gain.setValueAtTime(0.2, audioContext.currentTime);
-                    gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
-                    osc.connect(gain);
-                    gain.connect(audioContext.destination);
-                    osc.start();
-                    osc.stop(audioContext.currentTime + 0.2);
-                }, i * 100);
-            });
-        }
-
-        function playDeathSound() {
-            if (!audioContext) initAudio();
+            init() {
+                const imageInput = document.getElementById('imageInput');
+                const cropCircle = document.getElementById('cropCircle');
+                const zoomSlider = document.getElementById('zoomSlider');
+                const sizeSlider = document.getElementById('sizeSlider');
+                
+                imageInput.addEventListener('change', (e) => this.handleImageUpload(e));
+                
+                zoomSlider.addEventListener('input', (e) => {
+                    this.currentZoom = parseInt(e.target.value);
+                    document.getElementById('zoomValue').textContent = this.currentZoom + '%';
+                    this.updateCanvas();
+                });
+                
+                sizeSlider.addEventListener('input', (e) => {
+                    this.cropSize = parseInt(e.target.value);
+                    document.getElementById('sizeValue').textContent = this.cropSize + 'px';
+                    const cropCanvas = document.getElementById('cropCanvas');
+                    this.cropPosition = {
+                        x: (cropCanvas.width - this.cropSize) / 2,
+                        y: (cropCanvas.height - this.cropSize) / 2
+                    };
+                    this.updateCanvas();
+                });
+                
+                cropCircle.addEventListener('mousedown', (e) => this.startDrag(e));
+                cropCircle.addEventListener('touchstart', (e) => this.startDrag(e));
+                document.addEventListener('mousemove', (e) => this.drag(e));
+                document.addEventListener('touchmove', (e) => this.drag(e));
+                document.addEventListener('mouseup', () => this.endDrag());
+                document.addEventListener('touchend', () => this.endDrag());
+                
+                document.getElementById('cancelCrop').addEventListener('click', () => {
+                    document.getElementById('cropModal').classList.add('hidden');
+                    this.imageOffset = { x: 0, y: 0 };
+                });
+                
+                document.getElementById('confirmCrop').addEventListener('click', () => this.confirmCrop());
+            },
             
-            const oscillator = audioContext.createOscillator();
-            const gainNode = audioContext.createGain();
-            
-            oscillator.type = 'sine';
-            oscillator.frequency.setValueAtTime(400, audioContext.currentTime);
-            oscillator.frequency.exponentialRampToValueAtTime(100, audioContext.currentTime + 0.5);
-            
-            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
-            
-            oscillator.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-            
-            oscillator.start(audioContext.currentTime);
-            oscillator.stop(audioContext.currentTime + 0.5);
-        }
-
-        // ===== MANEJO DE IMAGEN MEJORADO =====
-        const imageInput = document.getElementById('imageInput');
-        const cropModal = document.getElementById('cropModal');
-        const cropCanvas = document.getElementById('cropCanvas');
-        const cropCtx = cropCanvas.getContext('2d');
-        const cropCircle = document.getElementById('cropCircle');
-        const zoomSlider = document.getElementById('zoomSlider');
-        const sizeSlider = document.getElementById('sizeSlider');
-        
-        let uploadedImage = null;
-        let cropPosition = { x: 75, y: 75 };
-        let isDragging = false;
-        let dragOffset = { x: 0, y: 0 };
-        let currentZoom = 100;
-        let cropSize = 150;
-        let imageOffset = { x: 0, y: 0 };
-        let isImageDragging = false;
-
-        imageInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
+            handleImageUpload(e) {
+                const file = e.target.files[0];
+                if (!file) return;
+                
                 const reader = new FileReader();
                 reader.onload = (event) => {
-                    uploadedImage = new Image();
-                    uploadedImage.onload = () => {
-                        showCropModal();
-                    };
-                    uploadedImage.src = event.target.result;
+                    this.uploadedImage = new Image();
+                    this.uploadedImage.onload = () => this.showModal();
+                    this.uploadedImage.src = event.target.result;
                 };
                 reader.readAsDataURL(file);
+            },
+            
+            showModal() {
+                document.getElementById('cropModal').classList.remove('hidden');
+                this.currentZoom = 100;
+                this.cropSize = 150;
+                document.getElementById('zoomSlider').value = 100;
+                document.getElementById('sizeSlider').value = 150;
+                document.getElementById('zoomValue').textContent = '100%';
+                document.getElementById('sizeValue').textContent = '150px';
+                this.updateCanvas();
+            },
+            
+            updateCanvas() {
+                const container = document.getElementById('cropContainer');
+                const cropCanvas = document.getElementById('cropCanvas');
+                const cropCtx = cropCanvas.getContext('2d');
+                const cropCircle = document.getElementById('cropCircle');
+                
+                const containerWidth = container.offsetWidth;
+                const containerHeight = 300;
+                
+                const baseScale = Math.min(containerWidth / this.uploadedImage.width, containerHeight / this.uploadedImage.height);
+                const scale = baseScale * (this.currentZoom / 100);
+                
+                cropCanvas.width = containerWidth;
+                cropCanvas.height = containerHeight;
+                
+                const imgWidth = this.uploadedImage.width * scale;
+                const imgHeight = this.uploadedImage.height * scale;
+                const imgX = (containerWidth - imgWidth) / 2 + this.imageOffset.x;
+                const imgY = (containerHeight - imgHeight) / 2 + this.imageOffset.y;
+                
+                cropCtx.fillStyle = '#1a1a2e';
+                cropCtx.fillRect(0, 0, containerWidth, containerHeight);
+                cropCtx.drawImage(this.uploadedImage, imgX, imgY, imgWidth, imgHeight);
+                
+                cropCircle.style.width = this.cropSize + 'px';
+                cropCircle.style.height = this.cropSize + 'px';
+                
+                if (this.cropPosition.x === 75 && this.cropPosition.y === 75) {
+                    this.cropPosition = {
+                        x: (containerWidth - this.cropSize) / 2,
+                        y: (containerHeight - this.cropSize) / 2
+                    };
+                }
+                
+                this.cropPosition.x = Math.max(0, Math.min(containerWidth - this.cropSize, this.cropPosition.x));
+                this.cropPosition.y = Math.max(0, Math.min(containerHeight - this.cropSize, this.cropPosition.y));
+                
+                cropCircle.style.left = this.cropPosition.x + 'px';
+                cropCircle.style.top = this.cropPosition.y + 'px';
+            },
+            
+            startDrag(e) {
+                this.isDragging = true;
+                const rect = document.getElementById('cropCircle').getBoundingClientRect();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                this.dragOffset = { x: clientX - rect.left, y: clientY - rect.top };
+            },
+            
+            drag(e) {
+                if (!this.isDragging) return;
+                e.preventDefault();
+                
+                const container = document.getElementById('cropContainer');
+                const cropCanvas = document.getElementById('cropCanvas');
+                const rect = container.getBoundingClientRect();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                
+                this.cropPosition.x = Math.max(0, Math.min(cropCanvas.width - this.cropSize, clientX - rect.left - this.dragOffset.x));
+                this.cropPosition.y = Math.max(0, Math.min(cropCanvas.height - this.cropSize, clientY - rect.top - this.dragOffset.y));
+                
+                document.getElementById('cropCircle').style.left = this.cropPosition.x + 'px';
+                document.getElementById('cropCircle').style.top = this.cropPosition.y + 'px';
+            },
+            
+            endDrag() {
+                this.isDragging = false;
+            },
+            
+            confirmCrop() {
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = 150;
+                tempCanvas.height = 150;
+                const tempCtx = tempCanvas.getContext('2d');
+                
+                const container = document.getElementById('cropContainer');
+                const containerWidth = container.offsetWidth;
+                const containerHeight = 300;
+                
+                const baseScale = Math.min(containerWidth / this.uploadedImage.width, containerHeight / this.uploadedImage.height);
+                const scale = baseScale * (this.currentZoom / 100);
+                
+                const imgWidth = this.uploadedImage.width * scale;
+                const imgHeight = this.uploadedImage.height * scale;
+                const imgX = (containerWidth - imgWidth) / 2 + this.imageOffset.x;
+                const imgY = (containerHeight - imgHeight) / 2 + this.imageOffset.y;
+                
+                const sourceX = (this.cropPosition.x - imgX) / scale;
+                const sourceY = (this.cropPosition.y - imgY) / scale;
+                const sourceSize = this.cropSize / scale;
+                
+                tempCtx.beginPath();
+                tempCtx.arc(75, 75, 75, 0, Math.PI * 2);
+                tempCtx.clip();
+                tempCtx.drawImage(this.uploadedImage, sourceX, sourceY, sourceSize, sourceSize, 0, 0, 150, 150);
+                
+                customFace = new Image();
+                customFace.src = tempCanvas.toDataURL();
+                
+                document.getElementById('facePreview').src = customFace.src;
+                document.getElementById('previewContainer').classList.remove('hidden');
+                document.getElementById('cropModal').classList.add('hidden');
+                this.imageOffset = { x: 0, y: 0 };
             }
-        });
-
-        function showCropModal() {
-            cropModal.classList.remove('hidden');
-            currentZoom = 100;
-            cropSize = 150;
-            zoomSlider.value = 100;
-            sizeSlider.value = 150;
-            document.getElementById('zoomValue').textContent = '100%';
-            document.getElementById('sizeValue').textContent = '150px';
-            
-            updateCropCanvas();
-        }
-
-        function updateCropCanvas() {
-            const container = document.getElementById('cropContainer');
-            const containerWidth = container.offsetWidth;
-            const containerHeight = 300;
-            
-            const baseScale = Math.min(containerWidth / uploadedImage.width, containerHeight / uploadedImage.height);
-            const scale = baseScale * (currentZoom / 100);
-            
-            cropCanvas.width = containerWidth;
-            cropCanvas.height = containerHeight;
-            
-            const imgWidth = uploadedImage.width * scale;
-            const imgHeight = uploadedImage.height * scale;
-            
-            const imgX = (containerWidth - imgWidth) / 2 + imageOffset.x;
-            const imgY = (containerHeight - imgHeight) / 2 + imageOffset.y;
-            
-            cropCtx.fillStyle = '#1a1a2e';
-            cropCtx.fillRect(0, 0, containerWidth, containerHeight);
-            cropCtx.drawImage(uploadedImage, imgX, imgY, imgWidth, imgHeight);
-            
-            // Actualizar tamaño del círculo de recorte
-            cropCircle.style.width = cropSize + 'px';
-            cropCircle.style.height = cropSize + 'px';
-            
-            // Centrar el círculo si es necesario
-            if (cropPosition.x === 75 && cropPosition.y === 75) {
-                cropPosition = {
-                    x: (containerWidth - cropSize) / 2,
-                    y: (containerHeight - cropSize) / 2
-                };
-            }
-            
-            // Asegurar que el círculo esté dentro del canvas
-            cropPosition.x = Math.max(0, Math.min(containerWidth - cropSize, cropPosition.x));
-            cropPosition.y = Math.max(0, Math.min(containerHeight - cropSize, cropPosition.y));
-            
-            updateCropCircle();
-        }
-
-        zoomSlider.addEventListener('input', (e) => {
-            currentZoom = parseInt(e.target.value);
-            document.getElementById('zoomValue').textContent = currentZoom + '%';
-            updateCropCanvas();
-        });
-
-        sizeSlider.addEventListener('input', (e) => {
-            cropSize = parseInt(e.target.value);
-            document.getElementById('sizeValue').textContent = cropSize + 'px';
-            cropPosition = {
-                x: (cropCanvas.width - cropSize) / 2,
-                y: (cropCanvas.height - cropSize) / 2
-            };
-            updateCropCanvas();
-        });
-
-        function updateCropCircle() {
-            cropCircle.style.left = cropPosition.x + 'px';
-            cropCircle.style.top = cropPosition.y + 'px';
-        }
-
-        cropCircle.addEventListener('mousedown', startDrag);
-        cropCircle.addEventListener('touchstart', startDrag);
-        document.addEventListener('mousemove', drag);
-        document.addEventListener('touchmove', drag);
-        document.addEventListener('mouseup', endDrag);
-        document.addEventListener('touchend', endDrag);
-
-        function startDrag(e) {
-            isDragging = true;
-            const rect = cropCircle.getBoundingClientRect();
-            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-            dragOffset = {
-                x: clientX - rect.left,
-                y: clientY - rect.top
-            };
-        }
-
-        function drag(e) {
-            if (!isDragging) return;
-            e.preventDefault();
-            
-            const container = document.getElementById('cropContainer');
-            const rect = container.getBoundingClientRect();
-            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-            
-            cropPosition.x = Math.max(0, Math.min(cropCanvas.width - cropSize, clientX - rect.left - dragOffset.x));
-            cropPosition.y = Math.max(0, Math.min(cropCanvas.height - cropSize, clientY - rect.top - dragOffset.y));
-            
-            updateCropCircle();
-        }
-
-        function endDrag() {
-            isDragging = false;
-        }
-
-        document.getElementById('cancelCrop').addEventListener('click', () => {
-            cropModal.classList.add('hidden');
-            imageOffset = { x: 0, y: 0 };
-        });
-
-        document.getElementById('confirmCrop').addEventListener('click', () => {
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = 150;
-            tempCanvas.height = 150;
-            const tempCtx = tempCanvas.getContext('2d');
-            
-            // Calcular las coordenadas de recorte basadas en el canvas actual
-            const container = document.getElementById('cropContainer');
-            const containerWidth = container.offsetWidth;
-            const containerHeight = 300;
-            
-            const baseScale = Math.min(containerWidth / uploadedImage.width, containerHeight / uploadedImage.height);
-            const scale = baseScale * (currentZoom / 100);
-            
-            const imgWidth = uploadedImage.width * scale;
-            const imgHeight = uploadedImage.height * scale;
-            const imgX = (containerWidth - imgWidth) / 2 + imageOffset.x;
-            const imgY = (containerHeight - imgHeight) / 2 + imageOffset.y;
-            
-            // Convertir coordenadas del círculo a coordenadas de la imagen original
-            const sourceX = (cropPosition.x - imgX) / scale;
-            const sourceY = (cropPosition.y - imgY) / scale;
-            const sourceSize = cropSize / scale;
-            
-            tempCtx.beginPath();
-            tempCtx.arc(75, 75, 75, 0, Math.PI * 2);
-            tempCtx.closePath();
-            tempCtx.clip();
-            
-            tempCtx.drawImage(uploadedImage, sourceX, sourceY, sourceSize, sourceSize, 0, 0, 150, 150);
-            
-            customFace = new Image();
-            customFace.src = tempCanvas.toDataURL();
-            
-            document.getElementById('facePreview').src = customFace.src;
-            document.getElementById('previewContainer').classList.remove('hidden');
-            
-            cropModal.classList.add('hidden');
-            imageOffset = { x: 0, y: 0 };
-        });
+        };
 
         // ===== SISTEMA DE NIVELES =====
-        function checkLevelUp() {
-            const newLevel = Math.min(CONFIG.maxLevel, Math.floor(totalPipesPassed / CONFIG.pipesPerLevel) + 1);
-            
-            if (newLevel > level) {
-                level = newLevel;
-                CONFIG.pipeSpeed = CONFIG.baseSpeed + (level - 1) * CONFIG.speedIncrement;
+        const LevelSystem = {
+            checkLevelUp() {
+                const newLevel = Math.min(CONFIG.maxLevel, Math.floor(totalPipesPassed / CONFIG.pipesPerLevel) + 1);
                 
-                playLevelUpSound();
-                showLevelUpNotification();
-                updateLevelDisplay();
+                if (newLevel > level) {
+                    level = newLevel;
+                    CONFIG.pipeSpeed = CONFIG.baseSpeed + (level - 1) * CONFIG.speedIncrement;
+                    Audio.playLevelUp();
+                    this.showNotification();
+                    this.updateDisplay();
+                }
+            },
+            
+            showNotification() {
+                const notification = document.getElementById('levelUpNotification');
+                document.getElementById('levelUpText').textContent = `¡NIVEL ${level}!`;
+                notification.classList.remove('hidden');
+                setTimeout(() => notification.classList.add('hidden'), 2000);
+            },
+            
+            updateDisplay() {
+                document.getElementById('levelDisplay').textContent = `Nivel ${level}`;
+            },
+            
+            isCheckpoint(pipeNumber) {
+                return pipeNumber % CONFIG.pipesPerLevel === 0 && pipeNumber > 0;
             }
-        }
+        };
 
-        function showLevelUpNotification() {
-            const notification = document.getElementById('levelUpNotification');
-            document.getElementById('levelUpText').textContent = `¡NIVEL ${level}!`;
-            notification.classList.remove('hidden');
+        // ===== RENDERIZADO =====
+        const Renderer = {
+            drawBackground() {
+                const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+                gradient.addColorStop(0, '#e0f2fe');
+                gradient.addColorStop(0.5, '#bae6fd');
+                gradient.addColorStop(1, '#7dd3fc');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // Azulejos
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                ctx.lineWidth = 1;
+                const tileSize = 40;
+                for (let x = 0; x < canvas.width; x += tileSize) {
+                    for (let y = 0; y < canvas.height; y += tileSize) {
+                        ctx.strokeRect(x, y, tileSize, tileSize);
+                    }
+                }
+                
+                // Suelo
+                ctx.fillStyle = '#1e293b';
+                ctx.fillRect(0, canvas.height - 20, canvas.width, 20);
+                ctx.fillStyle = '#334155';
+                ctx.fillRect(0, canvas.height - 25, canvas.width, 5);
+            },
             
-            setTimeout(() => {
-                notification.classList.add('hidden');
-            }, 2000);
-        }
-
-        function updateLevelDisplay() {
-            document.getElementById('levelDisplay').textContent = `Nivel ${level}`;
-        }
-
-        function isCheckpoint(pipeNumber) {
-            // El primer retrete de cada nivel es un checkpoint
-            return pipeNumber % CONFIG.pipesPerLevel === 0 && pipeNumber > 0;
-        }
-
-        // ===== INICIALIZACIÓN DEL JUEGO =====
-        function initGame() {
-            canvas = document.getElementById('gameCanvas');
-            ctx = canvas.getContext('2d');
+            drawDoor() {
+                const doorX = 20;
+                const doorY = canvas.height - 220;
+                const doorWidth = 80;
+                const doorHeight = 180;
+                
+                // Marco de la puerta
+                ctx.fillStyle = '#78350f';
+                ctx.fillRect(doorX - 8, doorY - 8, doorWidth + 16, doorHeight + 8);
+                
+                // Puerta
+                const openAmount = doorAnimation.doorOpen * doorWidth * 0.8;
+                
+                ctx.fillStyle = '#a16207';
+                ctx.fillRect(doorX + openAmount, doorY, doorWidth - openAmount, doorHeight);
+                
+                // Interior oscuro
+                if (openAmount > 5) {
+                    ctx.fillStyle = '#1c1917';
+                    ctx.fillRect(doorX, doorY, Math.min(openAmount, doorWidth - 10), doorHeight);
+                }
+                
+                // Manija
+                if (doorWidth - openAmount > 15) {
+                    ctx.fillStyle = '#fbbf24';
+                    ctx.beginPath();
+                    ctx.arc(doorX + openAmount + doorWidth - openAmount - 15, doorY + doorHeight / 2, 6, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                
+                // Cartel WC
+                ctx.fillStyle = '#f8fafc';
+                ctx.fillRect(doorX + openAmount + 15, doorY + 20, 50 - openAmount * 0.5, 30);
+                ctx.fillStyle = '#1e293b';
+                ctx.font = 'bold 16px Outfit';
+                ctx.textAlign = 'center';
+                if (doorWidth - openAmount > 40) {
+                    ctx.fillText('WC', doorX + openAmount + 40, doorY + 42);
+                }
+                ctx.textAlign = 'left';
+            },
             
-            const margin = 16;
-            const availableWidth = window.innerWidth - (margin * 2);
-            const availableHeight = window.innerHeight - (margin * 2);
-            const gameRatio = 2 / 3;
-            const screenRatio = availableWidth / availableHeight;
+            drawReadyMessage() {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 28px Outfit';
+                ctx.textAlign = 'center';
+                ctx.fillText('👆 TOCA PARA EMPEZAR 👆', canvas.width / 2, canvas.height / 2 - 20);
+                
+                ctx.font = '18px Outfit';
+                ctx.fillStyle = '#fbbf24';
+                ctx.fillText('El personaje saldrá del baño...', canvas.width / 2, canvas.height / 2 + 20);
+                ctx.textAlign = 'left';
+            },
             
-            let displayWidth, displayHeight;
+            drawPlayer() {
+                ctx.save();
+                ctx.translate(player.x + player.width / 2, player.y + player.height / 2);
+                ctx.rotate(player.rotation * Math.PI / 180);
+                
+                const offsetX = -player.width / 2;
+                const offsetY = -player.height / 2;
+                
+                // Piernas
+                ctx.strokeStyle = '#fcd34d';
+                ctx.lineWidth = 8;
+                ctx.lineCap = 'round';
+                
+                ctx.beginPath();
+                ctx.moveTo(offsetX + 30, offsetY + 75);
+                ctx.quadraticCurveTo(offsetX + 15, offsetY + 90, offsetX + 20, offsetY + 105);
+                ctx.stroke();
+                
+                ctx.beginPath();
+                ctx.moveTo(offsetX + 60, offsetY + 75);
+                ctx.quadraticCurveTo(offsetX + 75, offsetY + 90, offsetX + 70, offsetY + 105);
+                ctx.stroke();
+                
+                // Pies
+                ctx.fillStyle = '#92400e';
+                ctx.beginPath();
+                ctx.ellipse(offsetX + 18, offsetY + 108, 8, 5, -0.3, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.ellipse(offsetX + 72, offsetY + 108, 8, 5, 0.3, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Cuerpo
+                ctx.fillStyle = '#3b82f6';
+                ctx.beginPath();
+                ctx.ellipse(offsetX + 45, offsetY + 60, 22, 25, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = '#2563eb';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                // Brazos
+                ctx.strokeStyle = '#fcd34d';
+                ctx.lineWidth = 7;
+                ctx.lineCap = 'round';
+                
+                ctx.beginPath();
+                ctx.moveTo(offsetX + 25, offsetY + 55);
+                ctx.quadraticCurveTo(offsetX + 15, offsetY + 60, offsetX + 25, offsetY + 70);
+                ctx.stroke();
+                
+                ctx.beginPath();
+                ctx.moveTo(offsetX + 65, offsetY + 55);
+                ctx.quadraticCurveTo(offsetX + 75, offsetY + 60, offsetX + 65, offsetY + 70);
+                ctx.stroke();
+                
+                // Revista
+                ctx.fillStyle = '#f8fafc';
+                ctx.fillRect(offsetX + 20, offsetY + 58, 50, 35);
+                ctx.strokeStyle = '#1e293b';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(offsetX + 20, offsetY + 58, 50, 35);
+                
+                ctx.fillStyle = '#1e293b';
+                ctx.font = 'bold 9px Outfit';
+                ctx.textAlign = 'center';
+                ctx.fillText('ME', offsetX + 45, offsetY + 72);
+                ctx.fillText('CAGO', offsetX + 45, offsetY + 84);
+                ctx.textAlign = 'left';
+                
+                // Manos
+                ctx.fillStyle = '#fcd34d';
+                ctx.beginPath();
+                ctx.arc(offsetX + 22, offsetY + 72, 6, 0, Math.PI * 2);
+                ctx.arc(offsetX + 68, offsetY + 72, 6, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Rostro
+                const faceY = offsetY + 22;
+                const faceX = offsetX + 45;
+                const faceSize = 50;
+                
+                if (customFace) {
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.arc(faceX, faceY, faceSize / 2, 0, Math.PI * 2);
+                    ctx.clip();
+                    ctx.drawImage(customFace, faceX - faceSize/2, faceY - faceSize/2, faceSize, faceSize);
+                    ctx.restore();
+                    
+                    ctx.beginPath();
+                    ctx.arc(faceX, faceY, faceSize / 2, 0, Math.PI * 2);
+                    ctx.strokeStyle = '#e2e8f0';
+                    ctx.lineWidth = 3;
+                    ctx.stroke();
+                    
+                    if (player.isDead) {
+                        ctx.fillStyle = 'rgba(220, 38, 38, 0.6)';
+                        ctx.beginPath();
+                        ctx.arc(faceX, faceY, faceSize / 2, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        // Ojos X
+                        ctx.strokeStyle = '#000';
+                        ctx.lineWidth = 4;
+                        ctx.beginPath();
+                        ctx.moveTo(faceX - 14, faceY - 10);
+                        ctx.lineTo(faceX - 4, faceY);
+                        ctx.moveTo(faceX - 4, faceY - 10);
+                        ctx.lineTo(faceX - 14, faceY);
+                        ctx.stroke();
+                        ctx.beginPath();
+                        ctx.moveTo(faceX + 4, faceY - 10);
+                        ctx.lineTo(faceX + 14, faceY);
+                        ctx.moveTo(faceX + 14, faceY - 10);
+                        ctx.lineTo(faceX + 4, faceY);
+                        ctx.stroke();
+                    }
+                } else {
+                    ctx.beginPath();
+                    ctx.arc(faceX, faceY, faceSize / 2, 0, Math.PI * 2);
+                    ctx.fillStyle = '#fcd34d';
+                    ctx.fill();
+                    ctx.strokeStyle = '#f59e0b';
+                    ctx.lineWidth = 3;
+                    ctx.stroke();
+                    
+                    if (player.isDead) {
+                        ctx.strokeStyle = '#dc2626';
+                        ctx.lineWidth = 4;
+                        ctx.beginPath();
+                        ctx.moveTo(faceX - 14, faceY - 10);
+                        ctx.lineTo(faceX - 4, faceY);
+                        ctx.moveTo(faceX - 4, faceY - 10);
+                        ctx.lineTo(faceX - 14, faceY);
+                        ctx.stroke();
+                        ctx.beginPath();
+                        ctx.moveTo(faceX + 4, faceY - 10);
+                        ctx.lineTo(faceX + 14, faceY);
+                        ctx.moveTo(faceX + 14, faceY - 10);
+                        ctx.lineTo(faceX + 4, faceY);
+                        ctx.stroke();
+                    } else {
+                        // Ojos
+                        ctx.fillStyle = '#FFF';
+                        ctx.beginPath();
+                        ctx.ellipse(faceX - 10, faceY - 5, 8, 10, 0, 0, Math.PI * 2);
+                        ctx.ellipse(faceX + 10, faceY - 5, 8, 10, 0, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.strokeStyle = '#000';
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                        
+                        ctx.fillStyle = '#000';
+                        ctx.beginPath();
+                        ctx.arc(faceX - 10, faceY - 7, 4, 0, Math.PI * 2);
+                        ctx.arc(faceX + 10, faceY - 7, 4, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        // Cejas y boca
+                        ctx.strokeStyle = '#92400e';
+                        ctx.lineWidth = 3;
+                        ctx.beginPath();
+                        ctx.moveTo(faceX - 16, faceY - 14);
+                        ctx.lineTo(faceX - 4, faceY - 18);
+                        ctx.moveTo(faceX + 4, faceY - 18);
+                        ctx.lineTo(faceX + 16, faceY - 14);
+                        ctx.stroke();
+                        
+                        ctx.beginPath();
+                        ctx.moveTo(faceX - 10, faceY + 12);
+                        ctx.quadraticCurveTo(faceX, faceY + 8, faceX + 10, faceY + 12);
+                        ctx.stroke();
+                        
+                        // Sudor
+                        ctx.fillStyle = '#7dd3fc';
+                        ctx.beginPath();
+                        ctx.ellipse(faceX - 22, faceY - 5, 3, 5, 0.3, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        // Mejillas
+                        ctx.fillStyle = 'rgba(248, 113, 113, 0.5)';
+                        ctx.beginPath();
+                        ctx.arc(faceX - 18, faceY + 5, 6, 0, Math.PI * 2);
+                        ctx.arc(faceX + 18, faceY + 5, 6, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+                
+                // Efecto de gas
+                if (!player.isDead && player.velocity < -2) {
+                    ctx.strokeStyle = 'rgba(100, 140, 80, 0.7)';
+                    ctx.lineWidth = 3;
+                    for (let i = 0; i < 4; i++) {
+                        ctx.beginPath();
+                        ctx.moveTo(offsetX + 35 + i * 5, offsetY + 100);
+                        ctx.quadraticCurveTo(offsetX + 30 + i * 3, offsetY + 110 + i * 3, offsetX + 25 - i * 5, offsetY + 115 + i * 5);
+                        ctx.stroke();
+                    }
+                }
+                
+                ctx.restore();
+            },
             
-            if (screenRatio > gameRatio) {
-                displayHeight = availableHeight;
-                displayWidth = displayHeight * gameRatio;
-            } else {
-                displayWidth = availableWidth;
-                displayHeight = displayWidth / gameRatio;
+            drawFartClouds() {
+                player.fartClouds.forEach(cloud => {
+                    cloud.particles.forEach(p => {
+                        ctx.beginPath();
+                        ctx.arc(cloud.x + p.x, cloud.y + p.y, p.size * (cloud.size / 20), 0, Math.PI * 2);
+                        const g = Math.floor(100 + Math.random() * 50);
+                        ctx.fillStyle = `rgba(120, ${g}, 40, ${cloud.opacity * 0.6})`;
+                        ctx.fill();
+                    });
+                });
+            },
+            
+            drawObstacles() {
+                pipes.forEach(pipe => {
+                    if (pipe.isCheckpoint) {
+                        this.drawCheckpointToilet(pipe);
+                    } else {
+                        this.drawBurningToilet(pipe);
+                    }
+                    this.drawIceStalactites(pipe);
+                });
+            },
+            
+            drawCheckpointToilet(pipe) {
+                const toiletY = pipe.gapY + CONFIG.pipeGap;
+                const toiletHeight = canvas.height - toiletY;
+                const centerX = pipe.x + CONFIG.pipeWidth / 2;
+                
+                ctx.fillStyle = '#f8fafc';
+                ctx.beginPath();
+                ctx.moveTo(pipe.x - 5, toiletY + 35);
+                ctx.lineTo(pipe.x + CONFIG.pipeWidth + 5, toiletY + 35);
+                ctx.lineTo(pipe.x + CONFIG.pipeWidth, toiletY + toiletHeight);
+                ctx.lineTo(pipe.x, toiletY + toiletHeight);
+                ctx.closePath();
+                ctx.fill();
+                ctx.strokeStyle = '#cbd5e1';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                
+                ctx.fillStyle = '#f1f5f9';
+                ctx.beginPath();
+                ctx.ellipse(centerX, toiletY + 15, CONFIG.pipeWidth / 2 + 8, 20, 0, Math.PI, 0);
+                ctx.fill();
+                
+                ctx.fillStyle = '#e2e8f0';
+                ctx.beginPath();
+                ctx.ellipse(centerX, toiletY + 20, CONFIG.pipeWidth / 2, 18, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = '#cbd5e1';
+                ctx.stroke();
+                
+                ctx.fillStyle = '#7dd3fc';
+                ctx.beginPath();
+                ctx.ellipse(centerX, toiletY + 22, CONFIG.pipeWidth / 3, 12, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.fillStyle = '#10b981';
+                ctx.font = 'bold 12px Outfit';
+                ctx.textAlign = 'center';
+                ctx.fillText('✓ CHECKPOINT', centerX, toiletY + 55);
+                ctx.textAlign = 'left';
+                
+                ctx.fillStyle = '#fbbf24';
+                ctx.beginPath();
+                ctx.arc(centerX, toiletY - 10, 8 + Math.sin(animationTime * 3) * 2, 0, Math.PI * 2);
+                ctx.fill();
+            },
+            
+            drawBurningToilet(pipe) {
+                const toiletY = pipe.gapY + CONFIG.pipeGap;
+                const toiletHeight = canvas.height - toiletY;
+                const centerX = pipe.x + CONFIG.pipeWidth / 2;
+                
+                ctx.fillStyle = '#f8fafc';
+                ctx.beginPath();
+                ctx.moveTo(pipe.x - 5, toiletY + 35);
+                ctx.lineTo(pipe.x + CONFIG.pipeWidth + 5, toiletY + 35);
+                ctx.lineTo(pipe.x + CONFIG.pipeWidth, toiletY + toiletHeight);
+                ctx.lineTo(pipe.x, toiletY + toiletHeight);
+                ctx.closePath();
+                ctx.fill();
+                ctx.strokeStyle = '#cbd5e1';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                
+                // Manchas
+                ctx.fillStyle = '#1c1917';
+                for (let i = 0; i < 5; i++) {
+                    ctx.beginPath();
+                    ctx.ellipse(pipe.x + 10 + i * 15, toiletY + 40 + (i % 2) * 10, 8, 5, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                
+                ctx.fillStyle = '#f1f5f9';
+                ctx.beginPath();
+                ctx.ellipse(centerX, toiletY + 15, CONFIG.pipeWidth / 2 + 8, 20, 0, Math.PI, 0);
+                ctx.fill();
+                
+                const seatGradient = ctx.createRadialGradient(centerX, toiletY + 20, 0, centerX, toiletY + 20, CONFIG.pipeWidth / 2);
+                seatGradient.addColorStop(0, '#e2e8f0');
+                seatGradient.addColorStop(0.7, '#f8fafc');
+                seatGradient.addColorStop(1, '#4b5563');
+                ctx.fillStyle = seatGradient;
+                ctx.beginPath();
+                ctx.ellipse(centerX, toiletY + 20, CONFIG.pipeWidth / 2, 18, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                const lavaGradient = ctx.createRadialGradient(centerX, toiletY + 22, 0, centerX, toiletY + 22, CONFIG.pipeWidth / 3);
+                lavaGradient.addColorStop(0, '#fef08a');
+                lavaGradient.addColorStop(0.5, '#f97316');
+                lavaGradient.addColorStop(1, '#dc2626');
+                ctx.fillStyle = lavaGradient;
+                ctx.beginPath();
+                ctx.ellipse(centerX, toiletY + 22, CONFIG.pipeWidth / 3, 12, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                this.drawFire(pipe.x, toiletY, CONFIG.pipeWidth);
+            },
+            
+            drawFire(x, y, width) {
+                for (let i = 0; i < 7; i++) {
+                    const flameX = x + (width / 8) * (i + 1);
+                    const flameOffset = Math.sin(animationTime * 4 + i * 1.5) * 5;
+                    const flameHeight = 25 + Math.sin(animationTime * 6 + i * 2) * 10;
+                    
+                    ctx.fillStyle = 'rgba(220, 38, 38, 0.8)';
+                    ctx.beginPath();
+                    ctx.moveTo(flameX - 8, y + 15);
+                    ctx.quadraticCurveTo(flameX + flameOffset, y - flameHeight, flameX + 8, y + 15);
+                    ctx.fill();
+                    
+                    ctx.fillStyle = 'rgba(249, 115, 22, 0.85)';
+                    ctx.beginPath();
+                    ctx.moveTo(flameX - 5, y + 15);
+                    ctx.quadraticCurveTo(flameX + flameOffset * 0.7, y - flameHeight * 0.7, flameX + 5, y + 15);
+                    ctx.fill();
+                    
+                    ctx.fillStyle = 'rgba(251, 191, 36, 0.9)';
+                    ctx.beginPath();
+                    ctx.moveTo(flameX - 3, y + 15);
+                    ctx.quadraticCurveTo(flameX + flameOffset * 0.4, y - flameHeight * 0.5, flameX + 3, y + 15);
+                    ctx.fill();
+                }
+            },
+            
+            drawIceStalactites(pipe) {
+                const iceEndY = pipe.gapY;
+                
+                const iceGradient = ctx.createLinearGradient(pipe.x, 0, pipe.x + CONFIG.pipeWidth, 0);
+                iceGradient.addColorStop(0, '#a5f3fc');
+                iceGradient.addColorStop(0.5, '#ecfeff');
+                iceGradient.addColorStop(1, '#a5f3fc');
+                ctx.fillStyle = iceGradient;
+                ctx.fillRect(pipe.x, 0, CONFIG.pipeWidth, iceEndY - 40);
+                
+                ctx.strokeStyle = '#67e8f9';
+                ctx.lineWidth = 3;
+                ctx.strokeRect(pipe.x, 0, CONFIG.pipeWidth, iceEndY - 40);
+                
+                [0.15, 0.35, 0.5, 0.65, 0.85].forEach((pos, i) => {
+                    const icicleX = pipe.x + CONFIG.pipeWidth * pos;
+                    const icicleHeight = 25 + (i % 2) * 20 + Math.sin(animationTime + i) * 3;
+                    
+                    ctx.fillStyle = '#ecfeff';
+                    ctx.beginPath();
+                    ctx.moveTo(icicleX - 6, iceEndY - 40);
+                    ctx.lineTo(icicleX + 6, iceEndY - 40);
+                    ctx.lineTo(icicleX, iceEndY - 40 + icicleHeight);
+                    ctx.closePath();
+                    ctx.fill();
+                });
+            },
+            
+            drawMeltingDrops() {
+                meltingDrops.forEach(drop => {
+                    ctx.fillStyle = `rgba(30, 30, 30, ${drop.opacity})`;
+                    ctx.beginPath();
+                    ctx.arc(drop.x, drop.y, drop.size, 0, Math.PI * 2);
+                    ctx.fill();
+                });
             }
+        };
+
+        // ===== LÓGICA DEL JUEGO =====
+        const Game = {
+            init() {
+                canvas = document.getElementById('gameCanvas');
+                ctx = canvas.getContext('2d');
+                
+                this.resizeCanvas();
+                window.addEventListener('resize', () => this.resizeCanvas());
+                
+                document.getElementById('startScreen').classList.add('hidden');
+                canvas.classList.remove('hidden');
+                document.getElementById('gameUI').classList.remove('hidden');
+                
+                canvas.addEventListener('click', (e) => this.handleInput(e));
+                canvas.addEventListener('touchstart', (e) => this.handleInput(e), { passive: false });
+                
+                this.reset();
+                gameState = 'ready';
+                this.loop();
+            },
             
-            canvas.width = 400;
-            canvas.height = 600;
-            canvas.style.width = displayWidth + 'px';
-            canvas.style.height = displayHeight + 'px';
-            canvas.style.position = 'fixed';
-            canvas.style.top = '50%';
-            canvas.style.left = '50%';
-            canvas.style.transform = 'translate(-50%, -50%)';
-            
-            document.getElementById('startScreen').classList.add('hidden');
-            canvas.classList.remove('hidden');
-            document.getElementById('gameUI').classList.remove('hidden');
-            
-            canvas.addEventListener('click', handleInteraction);
-            canvas.addEventListener('touchstart', handleInteraction, { passive: false });
-            document.addEventListener('touchstart', preventZoom, { passive: false });
-            
-            resetGame();
-            gameState = 'playing';
-            gameLoop();
-        }
-        
-        window.addEventListener('resize', () => {
-            if (gameState === 'playing' || gameState === 'gameover') {
+            resizeCanvas() {
                 const margin = 16;
-                const availableWidth = window.innerWidth - (margin * 2);
-                const availableHeight = window.innerHeight - (margin * 2);
+                const availableWidth = window.innerWidth - margin * 2;
+                const availableHeight = window.innerHeight - margin * 2;
                 const gameRatio = 2 / 3;
-                const screenRatio = availableWidth / availableHeight;
                 
                 let displayWidth, displayHeight;
-                
-                if (screenRatio > gameRatio) {
+                if (availableWidth / availableHeight > gameRatio) {
                     displayHeight = availableHeight;
                     displayWidth = displayHeight * gameRatio;
                 } else {
@@ -634,929 +1077,316 @@
                     displayHeight = displayWidth / gameRatio;
                 }
                 
-                if (canvas) {
-                    canvas.style.width = displayWidth + 'px';
-                    canvas.style.height = displayHeight + 'px';
+                canvas.width = 400;
+                canvas.height = 600;
+                canvas.style.width = displayWidth + 'px';
+                canvas.style.height = displayHeight + 'px';
+                canvas.style.position = 'fixed';
+                canvas.style.top = '50%';
+                canvas.style.left = '50%';
+                canvas.style.transform = 'translate(-50%, -50%)';
+            },
+            
+            reset() {
+                player.x = -80;
+                player.y = canvas.height - 170;
+                player.velocity = 0;
+                player.rotation = 0;
+                player.isDead = false;
+                player.fartClouds = [];
+                
+                pipes = [];
+                meltingDrops = [];
+                score = 0;
+                level = 1;
+                totalPipesPassed = 0;
+                pipeCounter = 0;
+                lastPipeSpawn = 0;
+                animationTime = 0;
+                
+                CONFIG.pipeSpeed = CONFIG.initialSpeed;
+                CONFIG.baseSpeed = CONFIG.initialSpeed;
+                
+                doorAnimation = { active: false, progress: 0, doorOpen: 0, playerEntered: false };
+                
+                document.getElementById('scoreDisplay').textContent = '0';
+                LevelSystem.updateDisplay();
+            },
+            
+            handleInput(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                if (gameState === 'ready') {
+                    this.startGame();
+                } else if (gameState === 'playing' && !player.isDead) {
+                    this.jump();
                 }
-            }
-        });
-        
-        function handleInteraction(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            jump();
-        }
-        
-        function preventZoom(e) {
-            if (gameState === 'playing' && e.touches.length > 1) {
-                e.preventDefault();
-            }
-        }
-        
-        let lastTouchEnd = 0;
-        document.addEventListener('touchend', (e) => {
-            const now = Date.now();
-            if (now - lastTouchEnd <= 300) {
-                e.preventDefault();
-            }
-            lastTouchEnd = now;
-        }, { passive: false });
-
-        function resetGame() {
-            player.y = 250;
-            player.velocity = 0;
-            player.rotation = 0;
-            player.isDead = false;
-            player.fartClouds = [];
-            pipes = [];
-            meltingDrops = [];
-            score = 0;
-            level = 1;
-            totalPipesPassed = 0;
-            pipeCounter = 0;
-            lastPipeSpawn = 0;
-            CONFIG.pipeSpeed = CONFIG.baseSpeed;
-            updateScoreDisplay();
-            updateLevelDisplay();
-        }
-
-        // ===== CONTROLES =====
-        function jump() {
-            if (gameState !== 'playing' || player.isDead) return;
+            },
             
-            player.velocity = CONFIG.jumpForce;
-            playFartSound();
+            startGame() {
+                gameState = 'starting';
+                doorAnimation.active = true;
+                Audio.playDoorOpen();
+            },
             
-            player.fartClouds.push({
-                x: player.x,
-                y: player.y + player.height - 5,
-                size: 20,
-                opacity: 1,
-                particles: Array.from({length: 6}, () => ({
-                    x: Math.random() * 25 - 12,
-                    y: Math.random() * 15,
-                    size: 6 + Math.random() * 12,
-                    speed: 1.5 + Math.random() * 2.5
-                }))
-            });
-        }
-
-        document.addEventListener('keydown', (e) => {
-            if (e.code === 'Space') {
-                e.preventDefault();
-                jump();
-            }
-        });
-
-        // ===== GAME LOOP =====
-        function gameLoop() {
-            if (gameState !== 'playing') return;
-            
-            update();
-            render();
-            requestAnimationFrame(gameLoop);
-        }
-
-        function update() {
-            if (player.isDead) return;
-            
-            animationTime += 0.1;
-            
-            player.velocity += CONFIG.gravity;
-            player.y += player.velocity;
-            player.rotation = Math.min(Math.max(player.velocity * 3, -30), 90);
-            
-            // Actualizar nubes de pedo
-            player.fartClouds.forEach(cloud => {
-                cloud.opacity -= 0.02;
-                cloud.size += 0.5;
-                cloud.particles.forEach(p => {
-                    p.x -= p.speed;
-                    p.y += (Math.random() - 0.5) * 0.5;
+            jump() {
+                player.velocity = CONFIG.jumpForce;
+                Audio.playFart();
+                
+                player.fartClouds.push({
+                    x: player.x,
+                    y: player.y + player.height - 5,
+                    size: 20,
+                    opacity: 1,
+                    particles: Array.from({length: 6}, () => ({
+                        x: Math.random() * 25 - 12,
+                        y: Math.random() * 15,
+                        size: 6 + Math.random() * 12,
+                        speed: 1.5 + Math.random() * 2.5
+                    }))
                 });
-            });
-            player.fartClouds = player.fartClouds.filter(c => c.opacity > 0);
+            },
             
-            // Actualizar gotas derretidas
-            meltingDrops.forEach(drop => {
-                drop.y += drop.speed;
-                drop.opacity -= 0.01;
-            });
-            meltingDrops = meltingDrops.filter(d => d.opacity > 0 && d.y < canvas.height);
-            
-            // Spawn de tuberías
-            const now = Date.now();
-            if (now - lastPipeSpawn > CONFIG.spawnInterval) {
-                spawnPipe();
-                lastPipeSpawn = now;
-            }
-            
-            // Mover tuberías
-            pipes.forEach(pipe => {
-                pipe.x -= CONFIG.pipeSpeed;
+            update() {
+                animationTime += 0.1;
                 
-                if (!pipe.scored && pipe.x + CONFIG.pipeWidth < player.x) {
-                    score++;
-                    totalPipesPassed++;
-                    pipe.scored = true;
-                    updateScoreDisplay();
-                    checkLevelUp();
-                }
-                
-                // Generar gotas derretidas para retretes en llamas
-                if (!pipe.isCheckpoint && Math.random() < 0.05) {
-                    const toiletY = pipe.gapY + CONFIG.pipeGap;
-                    meltingDrops.push({
-                        x: pipe.x + Math.random() * CONFIG.pipeWidth,
-                        y: toiletY + 20,
-                        speed: 2 + Math.random() * 2,
-                        size: 3 + Math.random() * 4,
-                        opacity: 1,
-                        onFire: true
+                // Actualizar nubes de pedo
+                player.fartClouds.forEach(cloud => {
+                    cloud.opacity -= 0.02;
+                    cloud.size += 0.5;
+                    cloud.particles.forEach(p => {
+                        p.x -= p.speed;
+                        p.y += (Math.random() - 0.5) * 0.5;
                     });
-                }
-            });
-            
-            pipes = pipes.filter(p => p.x > -CONFIG.pipeWidth);
-            
-            checkCollisions();
-        }
-
-        function spawnPipe() {
-            const minGapY = 120;
-            const maxGapY = canvas.height - CONFIG.pipeGap - 120;
-            const gapY = minGapY + Math.random() * (maxGapY - minGapY);
-            
-            pipeCounter++;
-            const isCheckpointPipe = isCheckpoint(pipeCounter);
-            
-            pipes.push({
-                x: canvas.width,
-                gapY: gapY,
-                scored: false,
-                isCheckpoint: isCheckpointPipe,
-                pipeNumber: pipeCounter
-            });
-        }
-
-        function checkCollisions() {
-            if (player.y < 0 || player.y + player.height > canvas.height) {
-                die();
-                return;
-            }
-            
-            const playerBox = {
-                x: player.x + 15,
-                y: player.y + 15,
-                width: player.width - 30,
-                height: player.height - 30
-            };
-            
-            for (const pipe of pipes) {
-                if (rectCollision(playerBox, {
-                    x: pipe.x,
-                    y: 0,
-                    width: CONFIG.pipeWidth,
-                    height: pipe.gapY
-                })) {
-                    die();
+                });
+                player.fartClouds = player.fartClouds.filter(c => c.opacity > 0);
+                
+                // Actualizar gotas
+                meltingDrops.forEach(drop => {
+                    drop.y += drop.speed;
+                    drop.opacity -= 0.01;
+                });
+                meltingDrops = meltingDrops.filter(d => d.opacity > 0 && d.y < canvas.height);
+                
+                if (gameState === 'starting') {
+                    this.updateDoorAnimation();
                     return;
                 }
                 
-                if (rectCollision(playerBox, {
-                    x: pipe.x,
-                    y: pipe.gapY + CONFIG.pipeGap,
-                    width: CONFIG.pipeWidth,
-                    height: canvas.height - pipe.gapY - CONFIG.pipeGap
-                })) {
-                    die();
-                    return;
-                }
-            }
-        }
-
-        function rectCollision(a, b) {
-            return a.x < b.x + b.width &&
-                   a.x + a.width > b.x &&
-                   a.y < b.y + b.height &&
-                   a.y + a.height > b.y;
-        }
-
-        function die() {
-            player.isDead = true;
-            playDeathSound();
-            
-            for (let i = 0; i < 4; i++) {
-                setTimeout(() => {
-                    player.fartClouds.push({
-                        x: player.x - 10 + i * 8,
-                        y: player.y + player.height,
-                        size: 35 + i * 12,
-                        opacity: 1,
-                        particles: Array.from({length: 10}, () => ({
-                            x: Math.random() * 40 - 20,
-                            y: Math.random() * 25,
-                            size: 10 + Math.random() * 18,
-                            speed: 2.5 + Math.random() * 3
-                        }))
-                    });
-                }, i * 80);
-            }
-            
-            setTimeout(() => {
-                gameState = 'gameover';
-                showGameOver();
-            }, 1000);
-        }
-
-        function showGameOver() {
-            if (score > highScore) {
-                highScore = score;
-                localStorage.setItem('flappyPedoHighScore', highScore);
-            }
-            
-            document.getElementById('finalScore').textContent = score;
-            document.getElementById('finalLevel').textContent = level;
-            document.getElementById('highScore').textContent = highScore;
-            document.getElementById('gameOverScreen').classList.remove('hidden');
-        }
-
-        // ===== RENDERIZADO =====
-        function render() {
-            // Fondo
-            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-            gradient.addColorStop(0, '#e0f2fe');
-            gradient.addColorStop(0.5, '#bae6fd');
-            gradient.addColorStop(1, '#7dd3fc');
-            ctx.fillStyle = gradient;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            drawTiles();
-            
-            // Suelo
-            ctx.fillStyle = '#1e293b';
-            ctx.fillRect(0, canvas.height - 20, canvas.width, 20);
-            ctx.fillStyle = '#334155';
-            ctx.fillRect(0, canvas.height - 25, canvas.width, 5);
-            
-            // Obstáculos
-            drawObstacles();
-            
-            // Gotas derretidas
-            drawMeltingDrops();
-            
-            // Nubes de pedo
-            drawFartClouds();
-            
-            // Jugador
-            drawPlayer();
-        }
-
-        function drawTiles() {
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-            ctx.lineWidth = 1;
-            const tileSize = 40;
-            for (let x = 0; x < canvas.width; x += tileSize) {
-                for (let y = 0; y < canvas.height; y += tileSize) {
-                    ctx.strokeRect(x, y, tileSize, tileSize);
-                }
-            }
-        }
-
-        function drawMeltingDrops() {
-            meltingDrops.forEach(drop => {
-                if (drop.onFire) {
-                    // Gota negra encendida
-                    ctx.fillStyle = `rgba(30, 30, 30, ${drop.opacity})`;
-                    ctx.beginPath();
-                    ctx.arc(drop.x, drop.y, drop.size, 0, Math.PI * 2);
-                    ctx.fill();
-                    
-                    // Brillo de fuego
-                    ctx.fillStyle = `rgba(251, 146, 60, ${drop.opacity * 0.5})`;
-                    ctx.beginPath();
-                    ctx.arc(drop.x, drop.y - 2, drop.size * 0.5, 0, Math.PI * 2);
-                    ctx.fill();
-                }
-            });
-        }
-
-        function drawObstacles() {
-            pipes.forEach(pipe => {
-                if (pipe.isCheckpoint) {
-                    drawCheckpointToilet(pipe);
-                } else {
-                    drawBurningToilet(pipe);
-                }
-                drawIceStalactites(pipe);
-            });
-        }
-
-        function drawCheckpointToilet(pipe) {
-            const toiletY = pipe.gapY + CONFIG.pipeGap;
-            const toiletHeight = canvas.height - toiletY;
-            const centerX = pipe.x + CONFIG.pipeWidth / 2;
-            
-            // Base del retrete BLANCO (checkpoint - sin llamas)
-            ctx.fillStyle = '#f8fafc';
-            ctx.beginPath();
-            ctx.moveTo(pipe.x - 5, toiletY + 35);
-            ctx.lineTo(pipe.x + CONFIG.pipeWidth + 5, toiletY + 35);
-            ctx.lineTo(pipe.x + CONFIG.pipeWidth, toiletY + toiletHeight);
-            ctx.lineTo(pipe.x, toiletY + toiletHeight);
-            ctx.closePath();
-            ctx.fill();
-            ctx.strokeStyle = '#cbd5e1';
-            ctx.lineWidth = 3;
-            ctx.stroke();
-            
-            // Tapa blanca
-            ctx.fillStyle = '#f1f5f9';
-            ctx.beginPath();
-            ctx.ellipse(centerX, toiletY + 15, CONFIG.pipeWidth / 2 + 8, 20, 0, Math.PI, 0);
-            ctx.fill();
-            ctx.strokeStyle = '#e2e8f0';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-            
-            // Asiento
-            ctx.fillStyle = '#e2e8f0';
-            ctx.beginPath();
-            ctx.ellipse(centerX, toiletY + 20, CONFIG.pipeWidth / 2, 18, 0, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.strokeStyle = '#cbd5e1';
-            ctx.lineWidth = 3;
-            ctx.stroke();
-            
-            // Agujero con agua
-            ctx.fillStyle = '#7dd3fc';
-            ctx.beginPath();
-            ctx.ellipse(centerX, toiletY + 22, CONFIG.pipeWidth / 3, 12, 0, 0, Math.PI * 2);
-            ctx.fill();
-            
-            // Indicador de checkpoint
-            ctx.fillStyle = '#10b981';
-            ctx.font = 'bold 14px Outfit';
-            ctx.textAlign = 'center';
-            ctx.fillText('✓ CHECKPOINT', centerX, toiletY + 60);
-            ctx.textAlign = 'left';
-            
-            // Estrella brillante
-            ctx.fillStyle = '#fbbf24';
-            ctx.beginPath();
-            ctx.arc(centerX, toiletY - 10, 8 + Math.sin(animationTime * 3) * 2, 0, Math.PI * 2);
-            ctx.fill();
-        }
-
-        function drawBurningToilet(pipe) {
-            const toiletY = pipe.gapY + CONFIG.pipeGap;
-            const toiletHeight = canvas.height - toiletY;
-            const centerX = pipe.x + CONFIG.pipeWidth / 2;
-            
-            // Base del retrete BLANCO con manchas negras quemadas
-            ctx.fillStyle = '#f8fafc';
-            ctx.beginPath();
-            ctx.moveTo(pipe.x - 5, toiletY + 35);
-            ctx.lineTo(pipe.x + CONFIG.pipeWidth + 5, toiletY + 35);
-            ctx.lineTo(pipe.x + CONFIG.pipeWidth, toiletY + toiletHeight);
-            ctx.lineTo(pipe.x, toiletY + toiletHeight);
-            ctx.closePath();
-            ctx.fill();
-            
-            // Borde del retrete
-            ctx.strokeStyle = '#cbd5e1';
-            ctx.lineWidth = 3;
-            ctx.stroke();
-            
-            // Manchas negras de quemadura (cerca del fuego, arriba)
-            ctx.fillStyle = '#1c1917';
-            for (let i = 0; i < 5; i++) {
-                const mx = pipe.x + 10 + i * 15 + Math.sin(i * 2) * 5;
-                const my = toiletY + 40 + (i % 2) * 10;
-                const mSize = 8 + Math.random() * 6;
-                ctx.beginPath();
-                ctx.ellipse(mx, my, mSize, mSize * 0.6, Math.random(), 0, Math.PI * 2);
-                ctx.fill();
-            }
-            
-            // Manchas degradadas (gris a negro)
-            ctx.fillStyle = '#374151';
-            for (let i = 0; i < 4; i++) {
-                const mx = pipe.x + 15 + i * 18;
-                const my = toiletY + 70 + (i % 2) * 15;
-                ctx.beginPath();
-                ctx.ellipse(mx, my, 6, 4, i * 0.5, 0, Math.PI * 2);
-                ctx.fill();
-            }
-            
-            // Grietas de calor en el retrete
-            ctx.strokeStyle = '#f97316';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(pipe.x + 15, toiletY + 50);
-            ctx.lineTo(pipe.x + 25, toiletY + 80);
-            ctx.lineTo(pipe.x + 20, toiletY + 100);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(pipe.x + CONFIG.pipeWidth - 15, toiletY + 55);
-            ctx.lineTo(pipe.x + CONFIG.pipeWidth - 20, toiletY + 85);
-            ctx.stroke();
-            
-            // Tapa blanca con quemaduras
-            ctx.fillStyle = '#f1f5f9';
-            ctx.beginPath();
-            ctx.ellipse(centerX, toiletY + 15, CONFIG.pipeWidth / 2 + 8, 20, 0, Math.PI, 0);
-            ctx.fill();
-            
-            // Manchas en la tapa
-            ctx.fillStyle = '#1c1917';
-            ctx.beginPath();
-            ctx.ellipse(centerX - 15, toiletY + 8, 8, 4, -0.3, 0, Math.PI * 2);
-            ctx.ellipse(centerX + 10, toiletY + 12, 6, 3, 0.4, 0, Math.PI * 2);
-            ctx.fill();
-            
-            // Asiento con bordes quemados
-            const seatGradient = ctx.createRadialGradient(centerX, toiletY + 20, 0, centerX, toiletY + 20, CONFIG.pipeWidth / 2);
-            seatGradient.addColorStop(0, '#e2e8f0');
-            seatGradient.addColorStop(0.7, '#f8fafc');
-            seatGradient.addColorStop(1, '#4b5563');
-            
-            ctx.fillStyle = seatGradient;
-            ctx.beginPath();
-            ctx.ellipse(centerX, toiletY + 20, CONFIG.pipeWidth / 2, 18, 0, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.strokeStyle = '#4b5563';
-            ctx.lineWidth = 3;
-            ctx.stroke();
-            
-            // Agujero con lava/fuego
-            const lavaGradient = ctx.createRadialGradient(centerX, toiletY + 22, 0, centerX, toiletY + 22, CONFIG.pipeWidth / 3);
-            lavaGradient.addColorStop(0, '#fef08a');
-            lavaGradient.addColorStop(0.4, '#fbbf24');
-            lavaGradient.addColorStop(0.7, '#f97316');
-            lavaGradient.addColorStop(1, '#dc2626');
-            
-            ctx.fillStyle = lavaGradient;
-            ctx.beginPath();
-            ctx.ellipse(centerX, toiletY + 22, CONFIG.pipeWidth / 3, 12, 0, 0, Math.PI * 2);
-            ctx.fill();
-            
-            // Dibujar fuego
-            drawFire(pipe.x, toiletY, CONFIG.pipeWidth);
-            
-            // Gotas negras derretidas cayendo por los laterales
-            drawSideMeltingEffect(pipe.x, toiletY, CONFIG.pipeWidth);
-        }
-
-        function drawSideMeltingEffect(x, y, width) {
-            // Gotas negras encendidas cayendo por los lados
-            for (let side = 0; side < 2; side++) {
-                const sideX = side === 0 ? x - 3 : x + width + 3;
+                if (gameState !== 'playing' || player.isDead) return;
                 
-                for (let i = 0; i < 3; i++) {
-                    const dropY = y + 40 + ((animationTime * 30 + i * 40 + side * 20) % 80);
-                    const dropOpacity = 1 - ((animationTime * 30 + i * 40 + side * 20) % 80) / 80;
+                // Física del jugador
+                player.velocity += CONFIG.gravity;
+                player.y += player.velocity;
+                player.rotation = Math.min(Math.max(player.velocity * 3, -30), 90);
+                
+                // Spawn de obstáculos
+                const now = Date.now();
+                if (now - lastPipeSpawn > CONFIG.spawnInterval) {
+                    this.spawnPipe();
+                    lastPipeSpawn = now;
+                }
+                
+                // Mover obstáculos
+                pipes.forEach(pipe => {
+                    pipe.x -= CONFIG.pipeSpeed;
                     
-                    if (dropOpacity > 0) {
-                        // Gota negra
-                        ctx.fillStyle = `rgba(28, 25, 23, ${dropOpacity})`;
-                        ctx.beginPath();
-                        ctx.ellipse(sideX + Math.sin(animationTime + i) * 2, dropY, 4, 6, 0, 0, Math.PI * 2);
-                        ctx.fill();
-                        
-                        // Brillo de fuego en la gota
-                        ctx.fillStyle = `rgba(251, 146, 60, ${dropOpacity * 0.7})`;
-                        ctx.beginPath();
-                        ctx.arc(sideX + Math.sin(animationTime + i) * 2, dropY - 3, 2, 0, Math.PI * 2);
-                        ctx.fill();
+                    if (!pipe.scored && pipe.x + CONFIG.pipeWidth < player.x) {
+                        score++;
+                        totalPipesPassed++;
+                        pipe.scored = true;
+                        document.getElementById('scoreDisplay').textContent = score;
+                        LevelSystem.checkLevelUp();
+                    }
+                    
+                    if (!pipe.isCheckpoint && Math.random() < 0.03) {
+                        meltingDrops.push({
+                            x: pipe.x + Math.random() * CONFIG.pipeWidth,
+                            y: pipe.gapY + CONFIG.pipeGap + 20,
+                            speed: 2 + Math.random() * 2,
+                            size: 3 + Math.random() * 3,
+                            opacity: 1
+                        });
+                    }
+                });
+                
+                pipes = pipes.filter(p => p.x > -CONFIG.pipeWidth);
+                
+                this.checkCollisions();
+            },
+            
+            updateDoorAnimation() {
+                doorAnimation.progress += 0.02;
+                
+                if (doorAnimation.progress < 0.4) {
+                    doorAnimation.doorOpen = doorAnimation.progress / 0.4;
+                } else if (!doorAnimation.playerEntered) {
+                    doorAnimation.playerEntered = true;
+                    player.x = 60;
+                    player.y = canvas.height - 170;
+                }
+                
+                if (doorAnimation.playerEntered) {
+                    player.x += 2;
+                    
+                    if (player.x >= 100) {
+                        gameState = 'playing';
+                        player.x = 100;
+                        player.y = 250;
+                        lastPipeSpawn = Date.now();
                     }
                 }
-            }
+            },
             
-            // Chorros de material derretido
-            ctx.strokeStyle = 'rgba(28, 25, 23, 0.6)';
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.moveTo(x - 2, y + 35);
-            ctx.quadraticCurveTo(x - 5, y + 70, x - 3, y + 100);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(x + width + 2, y + 35);
-            ctx.quadraticCurveTo(x + width + 5, y + 65, x + width + 3, y + 95);
-            ctx.stroke();
-        }
-
-        function drawFire(x, y, width) {
-            const flameCount = 7;
-            
-            for (let i = 0; i < flameCount; i++) {
-                const flameX = x + (width / (flameCount + 1)) * (i + 1);
-                const flameOffset = Math.sin(animationTime * 4 + i * 1.5) * 5;
-                const flameHeight = 25 + Math.sin(animationTime * 6 + i * 2) * 10;
+            spawnPipe() {
+                const minGapY = 120;
+                const maxGapY = canvas.height - CONFIG.pipeGap - 120;
+                const gapY = minGapY + Math.random() * (maxGapY - minGapY);
                 
-                // Llama exterior (roja)
-                ctx.fillStyle = 'rgba(220, 38, 38, 0.8)';
-                ctx.beginPath();
-                ctx.moveTo(flameX - 8, y + 15);
-                ctx.quadraticCurveTo(flameX + flameOffset, y - flameHeight, flameX + 8, y + 15);
-                ctx.fill();
-                
-                // Llama media (naranja)
-                ctx.fillStyle = 'rgba(249, 115, 22, 0.85)';
-                ctx.beginPath();
-                ctx.moveTo(flameX - 5, y + 15);
-                ctx.quadraticCurveTo(flameX + flameOffset * 0.7, y - flameHeight * 0.7, flameX + 5, y + 15);
-                ctx.fill();
-                
-                // Llama interior (amarilla)
-                ctx.fillStyle = 'rgba(251, 191, 36, 0.9)';
-                ctx.beginPath();
-                ctx.moveTo(flameX - 3, y + 15);
-                ctx.quadraticCurveTo(flameX + flameOffset * 0.4, y - flameHeight * 0.5, flameX + 3, y + 15);
-                ctx.fill();
-                
-                // Núcleo blanco
-                ctx.fillStyle = 'rgba(254, 249, 195, 0.9)';
-                ctx.beginPath();
-                ctx.ellipse(flameX, y + 10, 2, 4, 0, 0, Math.PI * 2);
-                ctx.fill();
-            }
-            
-            // Chispas
-            for (let i = 0; i < 5; i++) {
-                const sparkX = x + 15 + (i * 15) + Math.sin(animationTime * 3 + i) * 8;
-                const sparkY = y - 10 - ((animationTime * 15 + i * 20) % 40);
-                const sparkAlpha = 1 - ((animationTime * 15 + i * 20) % 40) / 40;
-                
-                ctx.fillStyle = `rgba(251, 191, 36, ${sparkAlpha})`;
-                ctx.beginPath();
-                ctx.arc(sparkX, sparkY, 2, 0, Math.PI * 2);
-                ctx.fill();
-            }
-            
-            // Humo
-            for (let i = 0; i < 3; i++) {
-                const smokeX = x + width / 2 + Math.sin(animationTime * 2 + i * 2) * 15;
-                const smokeY = y - 30 - ((animationTime * 10 + i * 30) % 50);
-                const smokeAlpha = 0.3 - ((animationTime * 10 + i * 30) % 50) / 150;
-                const smokeSize = 8 + ((animationTime * 10 + i * 30) % 50) / 5;
-                
-                if (smokeAlpha > 0) {
-                    ctx.fillStyle = `rgba(30, 30, 30, ${smokeAlpha})`;
-                    ctx.beginPath();
-                    ctx.arc(smokeX, smokeY, smokeSize, 0, Math.PI * 2);
-                    ctx.fill();
-                }
-            }
-        }
-
-        function drawIceStalactites(pipe) {
-            const iceEndY = pipe.gapY;
-            const centerX = pipe.x + CONFIG.pipeWidth / 2;
-            
-            // Bloque de hielo
-            const iceGradient = ctx.createLinearGradient(pipe.x, 0, pipe.x + CONFIG.pipeWidth, 0);
-            iceGradient.addColorStop(0, '#a5f3fc');
-            iceGradient.addColorStop(0.3, '#ecfeff');
-            iceGradient.addColorStop(0.5, '#cffafe');
-            iceGradient.addColorStop(0.7, '#ecfeff');
-            iceGradient.addColorStop(1, '#a5f3fc');
-            
-            ctx.fillStyle = iceGradient;
-            ctx.fillRect(pipe.x, 0, CONFIG.pipeWidth, iceEndY - 40);
-            
-            ctx.strokeStyle = '#67e8f9';
-            ctx.lineWidth = 3;
-            ctx.strokeRect(pipe.x, 0, CONFIG.pipeWidth, iceEndY - 40);
-            
-            // Estalactitas
-            const iciclePositions = [0.15, 0.35, 0.5, 0.65, 0.85];
-            iciclePositions.forEach((pos, i) => {
-                const icicleX = pipe.x + CONFIG.pipeWidth * pos;
-                const icicleHeight = 25 + (i % 2) * 20 + Math.sin(animationTime + i) * 3;
-                const icicleWidth = 8 + (i % 2) * 4;
-                
-                const icicleGrad = ctx.createLinearGradient(icicleX - icicleWidth/2, iceEndY - 40, icicleX + icicleWidth/2, iceEndY - 40);
-                icicleGrad.addColorStop(0, '#a5f3fc');
-                icicleGrad.addColorStop(0.5, '#ecfeff');
-                icicleGrad.addColorStop(1, '#67e8f9');
-                
-                ctx.fillStyle = icicleGrad;
-                ctx.beginPath();
-                ctx.moveTo(icicleX - icicleWidth/2, iceEndY - 40);
-                ctx.lineTo(icicleX + icicleWidth/2, iceEndY - 40);
-                ctx.lineTo(icicleX, iceEndY - 40 + icicleHeight);
-                ctx.closePath();
-                ctx.fill();
-                
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.moveTo(icicleX - 2, iceEndY - 38);
-                ctx.lineTo(icicleX - 1, iceEndY - 40 + icicleHeight - 5);
-                ctx.stroke();
-            });
-            
-            // Gotas de agua
-            ctx.fillStyle = 'rgba(103, 232, 249, 0.7)';
-            const dropY = ((animationTime * 20) % 60);
-            if (dropY < 50) {
-                ctx.beginPath();
-                ctx.ellipse(centerX, iceEndY - 20 + dropY, 3, 5, 0, 0, Math.PI * 2);
-                ctx.fill();
-            }
-            
-            // Cristales de escarcha
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
-            ctx.lineWidth = 1;
-            for (let i = 0; i < 4; i++) {
-                const fx = pipe.x + 15 + i * 18;
-                const fy = 20 + (i % 2) * 30;
-                ctx.beginPath();
-                ctx.moveTo(fx, fy - 5);
-                ctx.lineTo(fx, fy + 5);
-                ctx.moveTo(fx - 4, fy - 3);
-                ctx.lineTo(fx + 4, fy + 3);
-                ctx.moveTo(fx + 4, fy - 3);
-                ctx.lineTo(fx - 4, fy + 3);
-                ctx.stroke();
-            }
-        }
-
-        function drawFartClouds() {
-            player.fartClouds.forEach(cloud => {
-                cloud.particles.forEach(p => {
-                    ctx.beginPath();
-                    ctx.arc(cloud.x + p.x, cloud.y + p.y, p.size * (cloud.size / 20), 0, Math.PI * 2);
-                    const g = Math.floor(100 + Math.random() * 50);
-                    ctx.fillStyle = `rgba(120, ${g}, 40, ${cloud.opacity * 0.6})`;
-                    ctx.fill();
-                    ctx.strokeStyle = `rgba(80, 120, 40, ${cloud.opacity * 0.3})`;
-                    ctx.lineWidth = 2;
-                    ctx.stroke();
+                pipeCounter++;
+                pipes.push({
+                    x: canvas.width,
+                    gapY: gapY,
+                    scored: false,
+                    isCheckpoint: LevelSystem.isCheckpoint(pipeCounter),
+                    pipeNumber: pipeCounter
                 });
-            });
-        }
-
-        function drawPlayer() {
-            ctx.save();
-            ctx.translate(player.x + player.width / 2, player.y + player.height / 2);
-            ctx.rotate(player.rotation * Math.PI / 180);
+            },
             
-            const offsetX = -player.width / 2;
-            const offsetY = -player.height / 2;
-            
-            // Piernas
-            ctx.strokeStyle = '#fcd34d';
-            ctx.lineWidth = 8;
-            ctx.lineCap = 'round';
-            
-            ctx.beginPath();
-            ctx.moveTo(offsetX + 30, offsetY + 75);
-            ctx.quadraticCurveTo(offsetX + 15, offsetY + 90, offsetX + 20, offsetY + 105);
-            ctx.stroke();
-            
-            ctx.beginPath();
-            ctx.moveTo(offsetX + 60, offsetY + 75);
-            ctx.quadraticCurveTo(offsetX + 75, offsetY + 90, offsetX + 70, offsetY + 105);
-            ctx.stroke();
-            
-            // Pies
-            ctx.fillStyle = '#92400e';
-            ctx.beginPath();
-            ctx.ellipse(offsetX + 18, offsetY + 108, 8, 5, -0.3, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.beginPath();
-            ctx.ellipse(offsetX + 72, offsetY + 108, 8, 5, 0.3, 0, Math.PI * 2);
-            ctx.fill();
-            
-            // Cuerpo
-            ctx.fillStyle = '#3b82f6';
-            ctx.beginPath();
-            ctx.ellipse(offsetX + 45, offsetY + 60, 22, 25, 0, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.strokeStyle = '#2563eb';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-            
-            // Brazos
-            ctx.strokeStyle = '#fcd34d';
-            ctx.lineWidth = 7;
-            ctx.lineCap = 'round';
-            
-            ctx.beginPath();
-            ctx.moveTo(offsetX + 25, offsetY + 55);
-            ctx.quadraticCurveTo(offsetX + 15, offsetY + 60, offsetX + 25, offsetY + 70);
-            ctx.stroke();
-            
-            ctx.beginPath();
-            ctx.moveTo(offsetX + 65, offsetY + 55);
-            ctx.quadraticCurveTo(offsetX + 75, offsetY + 60, offsetX + 65, offsetY + 70);
-            ctx.stroke();
-            
-            // Revista BLANCA con texto "ME CAGO"
-            ctx.fillStyle = '#f8fafc';
-            ctx.fillRect(offsetX + 20, offsetY + 58, 50, 35);
-            ctx.strokeStyle = '#1e293b';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(offsetX + 20, offsetY + 58, 50, 35);
-            
-            // Texto "ME CAGO" en la revista
-            ctx.fillStyle = '#1e293b';
-            ctx.font = 'bold 9px Outfit';
-            ctx.textAlign = 'center';
-            ctx.fillText('ME', offsetX + 45, offsetY + 72);
-            ctx.fillText('CAGO', offsetX + 45, offsetY + 84);
-            ctx.textAlign = 'left';
-            
-            // Manos
-            ctx.fillStyle = '#fcd34d';
-            ctx.beginPath();
-            ctx.arc(offsetX + 22, offsetY + 72, 6, 0, Math.PI * 2);
-            ctx.arc(offsetX + 68, offsetY + 72, 6, 0, Math.PI * 2);
-            ctx.fill();
-            
-            // Rostro
-            const faceY = offsetY + 22;
-            const faceX = offsetX + 45;
-            const faceSize = 50;
-            
-            if (customFace) {
-                ctx.save();
-                ctx.beginPath();
-                ctx.arc(faceX, faceY, faceSize / 2, 0, Math.PI * 2);
-                ctx.clip();
-                ctx.drawImage(customFace, faceX - faceSize/2, faceY - faceSize/2, faceSize, faceSize);
-                ctx.restore();
-                
-                ctx.beginPath();
-                ctx.arc(faceX, faceY, faceSize / 2, 0, Math.PI * 2);
-                ctx.strokeStyle = '#e2e8f0';
-                ctx.lineWidth = 3;
-                ctx.stroke();
-                
-                if (player.isDead) {
-                    ctx.fillStyle = 'rgba(220, 38, 38, 0.6)';
-                    ctx.beginPath();
-                    ctx.arc(faceX, faceY, faceSize / 2, 0, Math.PI * 2);
-                    ctx.fill();
-                    
-                    ctx.strokeStyle = '#000';
-                    ctx.lineWidth = 4;
-                    ctx.beginPath();
-                    ctx.moveTo(faceX - 14, faceY - 10);
-                    ctx.lineTo(faceX - 4, faceY);
-                    ctx.moveTo(faceX - 4, faceY - 10);
-                    ctx.lineTo(faceX - 14, faceY);
-                    ctx.stroke();
-                    ctx.beginPath();
-                    ctx.moveTo(faceX + 4, faceY - 10);
-                    ctx.lineTo(faceX + 14, faceY);
-                    ctx.moveTo(faceX + 14, faceY - 10);
-                    ctx.lineTo(faceX + 4, faceY);
-                    ctx.stroke();
-                    
-                    ctx.beginPath();
-                    ctx.arc(faceX, faceY + 12, 8, 0, Math.PI * 2);
-                    ctx.fillStyle = '#000';
-                    ctx.fill();
+            checkCollisions() {
+                if (player.y < 0 || player.y + player.height > canvas.height) {
+                    this.die();
+                    return;
                 }
-            } else {
-                ctx.beginPath();
-                ctx.arc(faceX, faceY, faceSize / 2, 0, Math.PI * 2);
-                ctx.fillStyle = '#fcd34d';
-                ctx.fill();
-                ctx.strokeStyle = '#f59e0b';
-                ctx.lineWidth = 3;
-                ctx.stroke();
                 
-                if (player.isDead) {
-                    ctx.strokeStyle = '#dc2626';
-                    ctx.lineWidth = 4;
-                    ctx.beginPath();
-                    ctx.moveTo(faceX - 14, faceY - 10);
-                    ctx.lineTo(faceX - 4, faceY);
-                    ctx.moveTo(faceX - 4, faceY - 10);
-                    ctx.lineTo(faceX - 14, faceY);
-                    ctx.stroke();
-                    ctx.beginPath();
-                    ctx.moveTo(faceX + 4, faceY - 10);
-                    ctx.lineTo(faceX + 14, faceY);
-                    ctx.moveTo(faceX + 14, faceY - 10);
-                    ctx.lineTo(faceX + 4, faceY);
-                    ctx.stroke();
-                    
-                    ctx.fillStyle = '#f87171';
-                    ctx.beginPath();
-                    ctx.ellipse(faceX, faceY + 18, 6, 10, 0, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.strokeStyle = '#ef4444';
-                    ctx.lineWidth = 2;
-                    ctx.stroke();
-                } else {
-                    // Ojos
-                    ctx.fillStyle = '#FFF';
-                    ctx.beginPath();
-                    ctx.ellipse(faceX - 10, faceY - 5, 8, 10, 0, 0, Math.PI * 2);
-                    ctx.ellipse(faceX + 10, faceY - 5, 8, 10, 0, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.strokeStyle = '#000';
-                    ctx.lineWidth = 2;
-                    ctx.stroke();
-                    
-                    ctx.fillStyle = '#000';
-                    ctx.beginPath();
-                    ctx.arc(faceX - 10, faceY - 7, 4, 0, Math.PI * 2);
-                    ctx.arc(faceX + 10, faceY - 7, 4, 0, Math.PI * 2);
-                    ctx.fill();
-                    
-                    // Cejas
-                    ctx.strokeStyle = '#92400e';
-                    ctx.lineWidth = 3;
-                    ctx.beginPath();
-                    ctx.moveTo(faceX - 16, faceY - 14);
-                    ctx.lineTo(faceX - 4, faceY - 18);
-                    ctx.moveTo(faceX + 4, faceY - 18);
-                    ctx.lineTo(faceX + 16, faceY - 14);
-                    ctx.stroke();
-                    
-                    // Boca
-                    ctx.strokeStyle = '#92400e';
-                    ctx.lineWidth = 3;
-                    ctx.beginPath();
-                    ctx.moveTo(faceX - 10, faceY + 12);
-                    ctx.quadraticCurveTo(faceX, faceY + 8, faceX + 10, faceY + 12);
-                    ctx.stroke();
-                    
-                    // Sudor
-                    ctx.fillStyle = '#7dd3fc';
-                    ctx.beginPath();
-                    ctx.ellipse(faceX - 22, faceY - 5, 3, 5, 0.3, 0, Math.PI * 2);
-                    ctx.fill();
-                    
-                    // Mejillas
-                    ctx.fillStyle = 'rgba(248, 113, 113, 0.5)';
-                    ctx.beginPath();
-                    ctx.arc(faceX - 18, faceY + 5, 6, 0, Math.PI * 2);
-                    ctx.arc(faceX + 18, faceY + 5, 6, 0, Math.PI * 2);
-                    ctx.fill();
+                const box = {
+                    x: player.x + 15,
+                    y: player.y + 15,
+                    width: player.width - 30,
+                    height: player.height - 30
+                };
+                
+                for (const pipe of pipes) {
+                    if (this.rectCollision(box, { x: pipe.x, y: 0, width: CONFIG.pipeWidth, height: pipe.gapY }) ||
+                        this.rectCollision(box, { x: pipe.x, y: pipe.gapY + CONFIG.pipeGap, width: CONFIG.pipeWidth, height: canvas.height })) {
+                        this.die();
+                        return;
+                    }
                 }
-            }
+            },
             
-            // Efecto de gas
-            if (!player.isDead && player.velocity < -2) {
-                ctx.strokeStyle = 'rgba(100, 140, 80, 0.7)';
-                ctx.lineWidth = 3;
+            rectCollision(a, b) {
+                return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+            },
+            
+            die() {
+                player.isDead = true;
+                Audio.playDeath();
+                
                 for (let i = 0; i < 4; i++) {
-                    ctx.beginPath();
-                    ctx.moveTo(offsetX + 35 + i * 5, offsetY + 100);
-                    ctx.quadraticCurveTo(offsetX + 30 + i * 3, offsetY + 110 + i * 3, offsetX + 25 - i * 5, offsetY + 115 + i * 5);
-                    ctx.stroke();
+                    setTimeout(() => {
+                        player.fartClouds.push({
+                            x: player.x - 10 + i * 8,
+                            y: player.y + player.height,
+                            size: 35 + i * 12,
+                            opacity: 1,
+                            particles: Array.from({length: 10}, () => ({
+                                x: Math.random() * 40 - 20,
+                                y: Math.random() * 25,
+                                size: 10 + Math.random() * 18,
+                                speed: 2.5 + Math.random() * 3
+                            }))
+                        });
+                    }, i * 80);
                 }
-            }
+                
+                setTimeout(() => {
+                    gameState = 'gameover';
+                    this.showGameOver();
+                }, 1000);
+            },
             
-            ctx.restore();
-        }
-
-        function updateScoreDisplay() {
-            document.getElementById('scoreDisplay').textContent = score;
-        }
-
-        // ===== BOTONES =====
-        document.getElementById('startBtn').addEventListener('click', initGame);
-        
-        document.getElementById('restartBtn').addEventListener('click', () => {
-            document.getElementById('gameOverScreen').classList.add('hidden');
-            resetGame();
-            gameState = 'playing';
-            gameLoop();
-        });
-        
-        document.getElementById('menuBtn').addEventListener('click', () => {
-            document.getElementById('gameOverScreen').classList.add('hidden');
-            document.getElementById('gameUI').classList.add('hidden');
-            canvas.classList.add('hidden');
-            canvas.style.position = '';
-            canvas.style.top = '';
-            canvas.style.left = '';
-            canvas.style.transform = '';
-            document.getElementById('startScreen').classList.remove('hidden');
-            gameState = 'menu';
-        });
-
-        document.addEventListener('click', () => {
-            if (!audioContext) initAudio();
-        }, { once: true });
-        
-        document.addEventListener('touchstart', () => {
-            if (!audioContext) initAudio();
-        }, { once: true });
-        
-        document.body.addEventListener('touchmove', (e) => {
-            if (gameState === 'playing') {
-                e.preventDefault();
+            showGameOver() {
+                if (score > highScore) {
+                    highScore = score;
+                    localStorage.setItem('flappyPedoHighScore', highScore);
+                }
+                
+                document.getElementById('finalScore').textContent = score;
+                document.getElementById('finalLevel').textContent = level;
+                document.getElementById('highScore').textContent = highScore;
+                document.getElementById('gameOverScreen').classList.remove('hidden');
+            },
+            
+            render() {
+                Renderer.drawBackground();
+                
+                if (gameState === 'ready' || gameState === 'starting') {
+                    Renderer.drawDoor();
+                }
+                
+                Renderer.drawObstacles();
+                Renderer.drawMeltingDrops();
+                Renderer.drawFartClouds();
+                
+                if (gameState !== 'ready' || doorAnimation.playerEntered) {
+                    Renderer.drawPlayer();
+                }
+                
+                if (gameState === 'ready') {
+                    Renderer.drawReadyMessage();
+                }
+            },
+            
+            loop() {
+                this.update();
+                this.render();
+                animationId = requestAnimationFrame(() => this.loop());
             }
-        }, { passive: false });
+        };
+
+        // ===== INICIALIZACIÓN =====
+        document.addEventListener('DOMContentLoaded', () => {
+            ImageCropper.init();
+            
+            document.getElementById('startBtn').addEventListener('click', () => Game.init());
+            
+            document.getElementById('restartBtn').addEventListener('click', () => {
+                document.getElementById('gameOverScreen').classList.add('hidden');
+                Game.reset();
+                gameState = 'ready';
+            });
+            
+            document.getElementById('menuBtn').addEventListener('click', () => {
+                document.getElementById('gameOverScreen').classList.add('hidden');
+                document.getElementById('gameUI').classList.add('hidden');
+                canvas.classList.add('hidden');
+                document.getElementById('startScreen').classList.remove('hidden');
+                gameState = 'menu';
+                if (animationId) cancelAnimationFrame(animationId);
+            });
+            
+            document.addEventListener('keydown', (e) => {
+                if (e.code === 'Space') {
+                    e.preventDefault();
+                    if (gameState === 'ready') Game.startGame();
+                    else if (gameState === 'playing' && !player.isDead) Game.jump();
+                }
+            });
+            
+            // Prevenir zoom en móviles
+            let lastTouchEnd = 0;
+            document.addEventListener('touchend', (e) => {
+                const now = Date.now();
+                if (now - lastTouchEnd <= 300) e.preventDefault();
+                lastTouchEnd = now;
+            }, { passive: false });
+            
+            document.addEventListener('touchstart', (e) => {
+                if (e.touches.length > 1) e.preventDefault();
+            }, { passive: false });
+        });
     </script>
 </body>
 </html>
