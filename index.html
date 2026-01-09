@@ -181,7 +181,7 @@
         </button>
         
         <div class="mt-4 text-gray-500 text-xs">
-            <p>🕹️ Usa el joystick para apuntar y dispara pedos en cualquier dirección</p>
+            <p>👆 Toca rápido para saltar | 🕹️ Arrastra para pedo direccional</p>
             <p class="mt-1 text-purple-400">🏆 10 niveles | 15 retretes por nivel | ¡Supera el récord!</p>
         </div>
     </div>
@@ -650,13 +650,29 @@
                 if (cityscape.initialized) return;
                 
                 for (let i = 0; i < 15; i++) {
+                    const numWindows = Math.floor(Math.random() * 8) + 3;
+                    const numRows = Math.floor(Math.random() * 5) + 3;
+                    
+                    // Crear estados de ventanas (encendida/apagada) con tiempos de cambio
+                    const windowStates = [];
+                    for (let r = 0; r < numRows; r++) {
+                        windowStates[r] = [];
+                        for (let c = 0; c < numWindows; c++) {
+                            windowStates[r][c] = {
+                                lit: Math.random() > 0.3,
+                                nextChange: Date.now() + 5000 + Math.random() * 15000 // Cambio cada 5-20 segundos
+                            };
+                        }
+                    }
+                    
                     cityscape.buildings.push({
                         x: i * 80 - 100,
                         width: 50 + Math.random() * 40,
                         height: 100 + Math.random() * 150,
                         color: this.randomBuildingColor(),
-                        windows: Math.floor(Math.random() * 8) + 3,
-                        windowRows: Math.floor(Math.random() * 5) + 3,
+                        windows: numWindows,
+                        windowRows: numRows,
+                        windowStates: windowStates,
                         layer: Math.random() > 0.5 ? 'back' : 'front'
                     });
                 }
@@ -758,6 +774,7 @@
             drawBuilding(x, building, alpha) {
                 const baseY = canvas.height - 20;
                 const y = baseY - building.height;
+                const now = Date.now();
                 
                 ctx.fillStyle = building.color;
                 ctx.globalAlpha = alpha;
@@ -768,12 +785,20 @@
                 const windowSpacingX = building.width / (building.windows + 1);
                 const windowSpacingY = building.height / (building.windowRows + 1);
                 
-                for (let row = 1; row <= building.windowRows; row++) {
-                    for (let col = 1; col <= building.windows; col++) {
-                        const wx = x + col * windowSpacingX - windowWidth / 2;
-                        const wy = y + row * windowSpacingY - windowHeight / 2;
+                for (let row = 0; row < building.windowRows; row++) {
+                    for (let col = 0; col < building.windows; col++) {
+                        const wx = x + (col + 1) * windowSpacingX - windowWidth / 2;
+                        const wy = y + (row + 1) * windowSpacingY - windowHeight / 2;
                         
-                        if (Math.random() > 0.3) {
+                        // Actualizar estado de ventana si es momento
+                        const windowState = building.windowStates[row][col];
+                        if (now > windowState.nextChange) {
+                            windowState.lit = !windowState.lit;
+                            // Próximo cambio en 8-25 segundos (muy lento)
+                            windowState.nextChange = now + 8000 + Math.random() * 17000;
+                        }
+                        
+                        if (windowState.lit) {
                             ctx.fillStyle = '#fef08a';
                         } else {
                             ctx.fillStyle = '#1e293b';
@@ -1256,8 +1281,8 @@
                 
                 ctx.font = '16px Outfit';
                 ctx.fillStyle = '#fbbf24';
-                ctx.fillText('Arrastra para apuntar y suelta', canvas.width / 2, canvas.height / 2 + 5);
-                ctx.fillText('para tirarte un pedo direccional 💨', canvas.width / 2, canvas.height / 2 + 25);
+                ctx.fillText('Toca rápido para saltar ⬆️', canvas.width / 2, canvas.height / 2 + 5);
+                ctx.fillText('o arrastra para pedo direccional 💨', canvas.width / 2, canvas.height / 2 + 25);
                 ctx.textAlign = 'left';
             },
             
@@ -1651,12 +1676,12 @@
                 
                 // Eventos de joystick
                 canvas.addEventListener('mousedown', (e) => this.handleStart(e));
-                canvas.addEventListener('mousemove', (e) => Joystick.move(e));
+                canvas.addEventListener('mousemove', (e) => this.handleMove(e));
                 canvas.addEventListener('mouseup', () => this.handleEnd());
                 canvas.addEventListener('mouseleave', () => this.handleEnd());
                 
                 canvas.addEventListener('touchstart', (e) => this.handleStart(e), { passive: false });
-                canvas.addEventListener('touchmove', (e) => Joystick.move(e), { passive: false });
+                canvas.addEventListener('touchmove', (e) => this.handleMove(e), { passive: false });
                 canvas.addEventListener('touchend', () => this.handleEnd(), { passive: false });
                 canvas.addEventListener('touchcancel', () => this.handleEnd(), { passive: false });
                 
@@ -1671,13 +1696,75 @@
                 
                 if (gameState === 'ready') {
                     this.startGame();
-                } else if (gameState === 'playing' && !player.isDead) {
+                    return;
+                }
+                
+                if (gameState === 'playing' && !player.isDead) {
+                    // Guardar posición y tiempo de inicio
+                    touchStartTime = Date.now();
+                    const coords = Joystick.getCanvasCoords(e);
+                    touchStartPos = { x: coords.x, y: coords.y };
+                    isTap = true;
                     Joystick.start(e);
                 }
             },
             
+            handleMove(e) {
+                if (gameState !== 'playing' || player.isDead) return;
+                
+                // Si se movió más de 15px, ya no es un tap
+                if (joystick.active) {
+                    const coords = Joystick.getCanvasCoords(e);
+                    const dx = coords.x - touchStartPos.x;
+                    const dy = coords.y - touchStartPos.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance > 15) {
+                        isTap = false;
+                    }
+                }
+                
+                Joystick.move(e);
+            },
+            
             handleEnd() {
-                Joystick.end();
+                if (gameState !== 'playing' || player.isDead) {
+                    Joystick.end();
+                    return;
+                }
+                
+                const touchDuration = Date.now() - touchStartTime;
+                
+                // Si fue un toque corto (< 200ms) y no se movió mucho, es un tap simple
+                if (isTap && touchDuration < 200 && joystick.power < 0.2) {
+                    // Impulso simple hacia arriba
+                    player.velocityY = -CONFIG.impulseForce * 0.8;
+                    Audio.playFart();
+                    
+                    // Crear nube de pedo hacia abajo
+                    player.fartClouds.push({
+                        x: player.x + player.width / 2,
+                        y: player.y + player.height,
+                        angle: Math.PI / 2,
+                        size: 20,
+                        opacity: 1,
+                        particles: Array.from({length: 8}, () => ({
+                            x: 0,
+                            y: 0,
+                            size: 5 + Math.random() * 10,
+                            speed: 2 + Math.random() * 3,
+                            angle: Math.PI / 2 + (Math.random() - 0.5) * 0.5
+                        }))
+                    });
+                    
+                    joystick.active = false;
+                    joystick.visible = false;
+                } else {
+                    // Usar joystick normalmente
+                    Joystick.end();
+                }
+                
+                isTap = false;
             },
             
             resizeCanvas() {
