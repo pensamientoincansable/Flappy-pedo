@@ -2,7 +2,9 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <title>Flappy Pedo - El Juego</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <style>
@@ -16,9 +18,21 @@
             background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #0d0d15 100%);
             min-height: 100vh;
             overflow: hidden;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+            touch-action: manipulation;
+        }
+        
+        * {
+            -webkit-tap-highlight-color: transparent;
         }
         
         #gameCanvas {
+            touch-action: none;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
             border: 3px solid rgba(255, 255, 255, 0.1);
             border-radius: 20px;
             box-shadow: 0 0 60px rgba(139, 92, 246, 0.3), 0 0 100px rgba(59, 130, 246, 0.1);
@@ -362,17 +376,53 @@
             canvas = document.getElementById('gameCanvas');
             ctx = canvas.getContext('2d');
             
+            // Ajustar tamaño del canvas para móviles
+            const maxWidth = Math.min(400, window.innerWidth - 20);
+            const maxHeight = Math.min(600, window.innerHeight - 100);
+            const scale = Math.min(maxWidth / 400, maxHeight / 600);
+            
             canvas.width = 400;
             canvas.height = 600;
+            canvas.style.width = (400 * scale) + 'px';
+            canvas.style.height = (600 * scale) + 'px';
             
             document.getElementById('startScreen').classList.add('hidden');
             canvas.classList.remove('hidden');
             document.getElementById('gameUI').classList.remove('hidden');
             
+            // Registrar eventos táctiles DESPUÉS de mostrar el canvas
+            canvas.addEventListener('click', handleInteraction);
+            canvas.addEventListener('touchstart', handleInteraction, { passive: false });
+            
+            // Prevenir zoom con doble toque en todo el documento durante el juego
+            document.addEventListener('touchstart', preventZoom, { passive: false });
+            
             resetGame();
             gameState = 'playing';
             gameLoop();
         }
+        
+        function handleInteraction(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            jump();
+        }
+        
+        function preventZoom(e) {
+            if (gameState === 'playing' && e.touches.length > 1) {
+                e.preventDefault();
+            }
+        }
+        
+        // Prevenir doble toque zoom globalmente
+        let lastTouchEnd = 0;
+        document.addEventListener('touchend', (e) => {
+            const now = Date.now();
+            if (now - lastTouchEnd <= 300) {
+                e.preventDefault();
+            }
+            lastTouchEnd = now;
+        }, { passive: false });
 
         function resetGame() {
             player.y = 250;
@@ -414,11 +464,7 @@
             }
         });
 
-        canvas?.addEventListener('click', jump);
-        canvas?.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            jump();
-        });
+        // Los eventos del canvas se registran en initGame()
 
         // ===== GAME LOOP =====
         function gameLoop() {
@@ -998,6 +1044,17 @@
         document.addEventListener('click', () => {
             if (!audioContext) initAudio();
         }, { once: true });
+        
+        document.addEventListener('touchstart', () => {
+            if (!audioContext) initAudio();
+        }, { once: true });
+        
+        // Prevenir comportamiento por defecto en el body para evitar scroll/zoom
+        document.body.addEventListener('touchmove', (e) => {
+            if (gameState === 'playing') {
+                e.preventDefault();
+            }
+        }, { passive: false });
     </script>
 </body>
 </html>
