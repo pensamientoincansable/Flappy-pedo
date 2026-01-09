@@ -79,7 +79,36 @@
         .crop-area {
             border: 3px dashed #8b5cf6;
             cursor: move;
-            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6);
+        }
+        
+        .slider-container input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 8px;
+            border-radius: 4px;
+            background: linear-gradient(to right, #6366f1, #8b5cf6);
+            outline: none;
+        }
+        
+        .slider-container input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: white;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+        
+        .level-indicator {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            animation: pulse 1s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
         }
     </style>
 </head>
@@ -108,6 +137,7 @@
         
         <div class="mt-6 text-gray-500 text-sm">
             <p>Toca la pantalla o presiona ESPACIO para... expulsar gases 💨</p>
+            <p class="mt-2 text-purple-400">🏆 10 niveles | 15 retretes por nivel | ¡Supera el récord!</p>
         </div>
     </div>
     
@@ -116,13 +146,26 @@
     
     <!-- UI del juego -->
     <div id="gameUI" class="hidden fixed top-4 left-1/2 -translate-x-1/2 text-center z-40">
+        <div class="flex items-center justify-center gap-4 mb-2">
+            <div class="level-indicator px-4 py-1 rounded-full text-white font-bold text-lg" id="levelDisplay">Nivel 1</div>
+        </div>
         <div class="text-6xl text-white font-extrabold drop-shadow-lg" id="scoreDisplay" style="text-shadow: 0 0 20px rgba(0,0,0,0.8), 0 4px 8px rgba(0,0,0,0.5);">0</div>
+    </div>
+    
+    <!-- Notificación de nivel -->
+    <div id="levelUpNotification" class="hidden fixed inset-0 flex items-center justify-center z-45 pointer-events-none">
+        <div class="text-center animate-bounce">
+            <div class="text-6xl mb-2">🎉</div>
+            <div class="text-4xl font-extrabold text-yellow-400" style="text-shadow: 0 0 30px rgba(251, 191, 36, 0.8);" id="levelUpText">¡NIVEL 2!</div>
+            <div class="text-xl text-white mt-2">¡Velocidad aumentada!</div>
+        </div>
     </div>
     
     <!-- Game Over -->
     <div id="gameOverScreen" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
         <div class="glass-card rounded-3xl p-8 text-center border border-red-500/30">
-            <h2 class="text-5xl font-extrabold text-red-500 mb-4">💀 GAME OVER 💀</h2>
+            <h2 class="text-5xl font-extrabold text-red-500 mb-4">💩 GAME OVER 🤪</h2>
+            <p class="text-2xl text-purple-300 mb-2">Nivel alcanzado: <span id="finalLevel" class="text-purple-400 font-bold">1</span></p>
             <p class="text-3xl text-white mb-2">Puntuación: <span id="finalScore" class="text-yellow-400 font-bold">0</span></p>
             <p class="text-2xl text-gray-300 mb-6">Récord: <span id="highScore" class="text-green-400 font-bold">0</span></p>
             <button id="restartBtn" class="btn-game text-xl px-8 py-3 rounded-xl text-white">
@@ -135,17 +178,42 @@
         </div>
     </div>
     
-    <!-- Modal de recorte -->
-    <div id="cropModal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-        <div class="glass-card rounded-3xl p-6 max-w-lg w-full">
-            <h3 class="text-2xl text-white mb-4 text-center font-semibold">Recorta tu rostro</h3>
-            <div class="relative overflow-hidden bg-gray-900 rounded-xl mb-4" style="height: 300px;">
+    <!-- Modal de recorte mejorado -->
+    <div id="cropModal" class="hidden fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4">
+        <div class="glass-card rounded-3xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <h3 class="text-2xl text-white mb-4 text-center font-semibold">✂️ Recorta tu rostro</h3>
+            
+            <div class="relative overflow-hidden bg-gray-900 rounded-xl mb-4" id="cropContainer" style="height: 300px;">
                 <canvas id="cropCanvas" class="absolute"></canvas>
-                <div id="cropCircle" class="crop-area absolute rounded-full" style="width: 150px; height: 150px;"></div>
+                <div id="cropCircle" class="crop-area absolute rounded-full"></div>
             </div>
+            
+            <!-- Controles de zoom y tamaño -->
+            <div class="space-y-4 mb-4">
+                <div class="slider-container">
+                    <label class="text-white text-sm mb-1 block">🔍 Zoom de imagen</label>
+                    <input type="range" id="zoomSlider" min="50" max="200" value="100">
+                    <div class="flex justify-between text-gray-400 text-xs mt-1">
+                        <span>50%</span>
+                        <span id="zoomValue" class="text-purple-400">100%</span>
+                        <span>200%</span>
+                    </div>
+                </div>
+                
+                <div class="slider-container">
+                    <label class="text-white text-sm mb-1 block">⭕ Tamaño del recorte</label>
+                    <input type="range" id="sizeSlider" min="80" max="200" value="150">
+                    <div class="flex justify-between text-gray-400 text-xs mt-1">
+                        <span>Pequeño</span>
+                        <span id="sizeValue" class="text-purple-400">150px</span>
+                        <span>Grande</span>
+                    </div>
+                </div>
+            </div>
+            
             <div class="flex justify-center gap-4">
                 <button id="cancelCrop" class="bg-red-600 hover:bg-red-500 px-6 py-2 rounded-xl text-white text-lg font-semibold transition-all">
-                    Cancelar
+                    ✕ Cancelar
                 </button>
                 <button id="confirmCrop" class="btn-game px-6 py-2 rounded-xl text-white text-lg font-semibold">
                     ✓ Confirmar
@@ -161,19 +229,26 @@
             jumpForce: -8,
             pipeGap: 180,
             pipeWidth: 80,
+            baseSpeed: 3,
             pipeSpeed: 3,
-            spawnInterval: 1800
+            spawnInterval: 1800,
+            pipesPerLevel: 15,
+            maxLevel: 10,
+            speedIncrement: 0.3
         };
 
         // ===== ESTADO DEL JUEGO =====
         let canvas, ctx;
         let gameState = 'menu';
         let score = 0;
+        let level = 1;
+        let pipesInLevel = 0;
+        let totalPipesPassed = 0;
         let highScore = localStorage.getItem('flappyPedoHighScore') || 0;
         let customFace = null;
         let audioContext;
 
-        // Jugador - más grande
+        // Jugador
         const player = {
             x: 100,
             y: 250,
@@ -188,8 +263,13 @@
         // Obstáculos
         let pipes = [];
         let lastPipeSpawn = 0;
+        let pipeCounter = 0;
+        
+        // Animación
+        let animationTime = 0;
+        let meltingDrops = [];
 
-        // ===== AUDIO - SONIDO DE PEDO =====
+        // ===== AUDIO =====
         function initAudio() {
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
         }
@@ -231,6 +311,26 @@
             noise.stop(audioContext.currentTime + duration);
         }
 
+        function playLevelUpSound() {
+            if (!audioContext) initAudio();
+            
+            const notes = [523, 659, 784, 1047];
+            notes.forEach((freq, i) => {
+                setTimeout(() => {
+                    const osc = audioContext.createOscillator();
+                    const gain = audioContext.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.value = freq;
+                    gain.gain.setValueAtTime(0.2, audioContext.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
+                    osc.connect(gain);
+                    gain.connect(audioContext.destination);
+                    osc.start();
+                    osc.stop(audioContext.currentTime + 0.2);
+                }, i * 100);
+            });
+        }
+
         function playDeathSound() {
             if (!audioContext) initAudio();
             
@@ -251,17 +351,23 @@
             oscillator.stop(audioContext.currentTime + 0.5);
         }
 
-        // ===== MANEJO DE IMAGEN =====
+        // ===== MANEJO DE IMAGEN MEJORADO =====
         const imageInput = document.getElementById('imageInput');
         const cropModal = document.getElementById('cropModal');
         const cropCanvas = document.getElementById('cropCanvas');
         const cropCtx = cropCanvas.getContext('2d');
         const cropCircle = document.getElementById('cropCircle');
+        const zoomSlider = document.getElementById('zoomSlider');
+        const sizeSlider = document.getElementById('sizeSlider');
         
         let uploadedImage = null;
         let cropPosition = { x: 75, y: 75 };
         let isDragging = false;
         let dragOffset = { x: 0, y: 0 };
+        let currentZoom = 100;
+        let cropSize = 150;
+        let imageOffset = { x: 0, y: 0 };
+        let isImageDragging = false;
 
         imageInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
@@ -280,23 +386,71 @@
 
         function showCropModal() {
             cropModal.classList.remove('hidden');
+            currentZoom = 100;
+            cropSize = 150;
+            zoomSlider.value = 100;
+            sizeSlider.value = 150;
+            document.getElementById('zoomValue').textContent = '100%';
+            document.getElementById('sizeValue').textContent = '150px';
             
-            const container = cropCanvas.parentElement;
+            updateCropCanvas();
+        }
+
+        function updateCropCanvas() {
+            const container = document.getElementById('cropContainer');
             const containerWidth = container.offsetWidth;
             const containerHeight = 300;
             
-            const scale = Math.min(containerWidth / uploadedImage.width, containerHeight / uploadedImage.height);
-            cropCanvas.width = uploadedImage.width * scale;
-            cropCanvas.height = uploadedImage.height * scale;
+            const baseScale = Math.min(containerWidth / uploadedImage.width, containerHeight / uploadedImage.height);
+            const scale = baseScale * (currentZoom / 100);
             
-            cropCtx.drawImage(uploadedImage, 0, 0, cropCanvas.width, cropCanvas.height);
+            cropCanvas.width = containerWidth;
+            cropCanvas.height = containerHeight;
             
-            cropPosition = {
-                x: (cropCanvas.width - 150) / 2,
-                y: (cropCanvas.height - 150) / 2
-            };
+            const imgWidth = uploadedImage.width * scale;
+            const imgHeight = uploadedImage.height * scale;
+            
+            const imgX = (containerWidth - imgWidth) / 2 + imageOffset.x;
+            const imgY = (containerHeight - imgHeight) / 2 + imageOffset.y;
+            
+            cropCtx.fillStyle = '#1a1a2e';
+            cropCtx.fillRect(0, 0, containerWidth, containerHeight);
+            cropCtx.drawImage(uploadedImage, imgX, imgY, imgWidth, imgHeight);
+            
+            // Actualizar tamaño del círculo de recorte
+            cropCircle.style.width = cropSize + 'px';
+            cropCircle.style.height = cropSize + 'px';
+            
+            // Centrar el círculo si es necesario
+            if (cropPosition.x === 75 && cropPosition.y === 75) {
+                cropPosition = {
+                    x: (containerWidth - cropSize) / 2,
+                    y: (containerHeight - cropSize) / 2
+                };
+            }
+            
+            // Asegurar que el círculo esté dentro del canvas
+            cropPosition.x = Math.max(0, Math.min(containerWidth - cropSize, cropPosition.x));
+            cropPosition.y = Math.max(0, Math.min(containerHeight - cropSize, cropPosition.y));
+            
             updateCropCircle();
         }
+
+        zoomSlider.addEventListener('input', (e) => {
+            currentZoom = parseInt(e.target.value);
+            document.getElementById('zoomValue').textContent = currentZoom + '%';
+            updateCropCanvas();
+        });
+
+        sizeSlider.addEventListener('input', (e) => {
+            cropSize = parseInt(e.target.value);
+            document.getElementById('sizeValue').textContent = cropSize + 'px';
+            cropPosition = {
+                x: (cropCanvas.width - cropSize) / 2,
+                y: (cropCanvas.height - cropSize) / 2
+            };
+            updateCropCanvas();
+        });
 
         function updateCropCircle() {
             cropCircle.style.left = cropPosition.x + 'px';
@@ -325,13 +479,13 @@
             if (!isDragging) return;
             e.preventDefault();
             
-            const container = cropCanvas.parentElement;
+            const container = document.getElementById('cropContainer');
             const rect = container.getBoundingClientRect();
             const clientX = e.touches ? e.touches[0].clientX : e.clientX;
             const clientY = e.touches ? e.touches[0].clientY : e.clientY;
             
-            cropPosition.x = Math.max(0, Math.min(cropCanvas.width - 150, clientX - rect.left - dragOffset.x));
-            cropPosition.y = Math.max(0, Math.min(cropCanvas.height - 150, clientY - rect.top - dragOffset.y));
+            cropPosition.x = Math.max(0, Math.min(cropCanvas.width - cropSize, clientX - rect.left - dragOffset.x));
+            cropPosition.y = Math.max(0, Math.min(cropCanvas.height - cropSize, clientY - rect.top - dragOffset.y));
             
             updateCropCircle();
         }
@@ -342,6 +496,7 @@
 
         document.getElementById('cancelCrop').addEventListener('click', () => {
             cropModal.classList.add('hidden');
+            imageOffset = { x: 0, y: 0 };
         });
 
         document.getElementById('confirmCrop').addEventListener('click', () => {
@@ -350,10 +505,23 @@
             tempCanvas.height = 150;
             const tempCtx = tempCanvas.getContext('2d');
             
-            const scale = cropCanvas.width / uploadedImage.width;
-            const sourceX = cropPosition.x / scale;
-            const sourceY = cropPosition.y / scale;
-            const sourceSize = 150 / scale;
+            // Calcular las coordenadas de recorte basadas en el canvas actual
+            const container = document.getElementById('cropContainer');
+            const containerWidth = container.offsetWidth;
+            const containerHeight = 300;
+            
+            const baseScale = Math.min(containerWidth / uploadedImage.width, containerHeight / uploadedImage.height);
+            const scale = baseScale * (currentZoom / 100);
+            
+            const imgWidth = uploadedImage.width * scale;
+            const imgHeight = uploadedImage.height * scale;
+            const imgX = (containerWidth - imgWidth) / 2 + imageOffset.x;
+            const imgY = (containerHeight - imgHeight) / 2 + imageOffset.y;
+            
+            // Convertir coordenadas del círculo a coordenadas de la imagen original
+            const sourceX = (cropPosition.x - imgX) / scale;
+            const sourceY = (cropPosition.y - imgY) / scale;
+            const sourceSize = cropSize / scale;
             
             tempCtx.beginPath();
             tempCtx.arc(75, 75, 75, 0, Math.PI * 2);
@@ -369,39 +537,65 @@
             document.getElementById('previewContainer').classList.remove('hidden');
             
             cropModal.classList.add('hidden');
+            imageOffset = { x: 0, y: 0 };
         });
+
+        // ===== SISTEMA DE NIVELES =====
+        function checkLevelUp() {
+            const newLevel = Math.min(CONFIG.maxLevel, Math.floor(totalPipesPassed / CONFIG.pipesPerLevel) + 1);
+            
+            if (newLevel > level) {
+                level = newLevel;
+                CONFIG.pipeSpeed = CONFIG.baseSpeed + (level - 1) * CONFIG.speedIncrement;
+                
+                playLevelUpSound();
+                showLevelUpNotification();
+                updateLevelDisplay();
+            }
+        }
+
+        function showLevelUpNotification() {
+            const notification = document.getElementById('levelUpNotification');
+            document.getElementById('levelUpText').textContent = `¡NIVEL ${level}!`;
+            notification.classList.remove('hidden');
+            
+            setTimeout(() => {
+                notification.classList.add('hidden');
+            }, 2000);
+        }
+
+        function updateLevelDisplay() {
+            document.getElementById('levelDisplay').textContent = `Nivel ${level}`;
+        }
+
+        function isCheckpoint(pipeNumber) {
+            // El primer retrete de cada nivel es un checkpoint
+            return pipeNumber % CONFIG.pipesPerLevel === 0 && pipeNumber > 0;
+        }
 
         // ===== INICIALIZACIÓN DEL JUEGO =====
         function initGame() {
             canvas = document.getElementById('gameCanvas');
             ctx = canvas.getContext('2d');
             
-            // Calcular el tamaño óptimo para llenar la pantalla
-            const margin = 16; // Margen en píxeles
+            const margin = 16;
             const availableWidth = window.innerWidth - (margin * 2);
             const availableHeight = window.innerHeight - (margin * 2);
-            
-            // Proporción del juego (2:3)
             const gameRatio = 2 / 3;
             const screenRatio = availableWidth / availableHeight;
             
             let displayWidth, displayHeight;
             
             if (screenRatio > gameRatio) {
-                // La pantalla es más ancha, limitamos por altura
                 displayHeight = availableHeight;
                 displayWidth = displayHeight * gameRatio;
             } else {
-                // La pantalla es más alta, limitamos por ancho
                 displayWidth = availableWidth;
                 displayHeight = displayWidth / gameRatio;
             }
             
-            // El canvas interno mantiene proporciones fijas para la lógica del juego
             canvas.width = 400;
             canvas.height = 600;
-            
-            // El tamaño visual se adapta a la pantalla
             canvas.style.width = displayWidth + 'px';
             canvas.style.height = displayHeight + 'px';
             canvas.style.position = 'fixed';
@@ -413,11 +607,8 @@
             canvas.classList.remove('hidden');
             document.getElementById('gameUI').classList.remove('hidden');
             
-            // Registrar eventos táctiles DESPUÉS de mostrar el canvas
             canvas.addEventListener('click', handleInteraction);
             canvas.addEventListener('touchstart', handleInteraction, { passive: false });
-            
-            // Prevenir zoom con doble toque en todo el documento durante el juego
             document.addEventListener('touchstart', preventZoom, { passive: false });
             
             resetGame();
@@ -425,7 +616,6 @@
             gameLoop();
         }
         
-        // Reajustar canvas cuando cambia la orientación o tamaño de ventana
         window.addEventListener('resize', () => {
             if (gameState === 'playing' || gameState === 'gameover') {
                 const margin = 16;
@@ -463,7 +653,6 @@
             }
         }
         
-        // Prevenir doble toque zoom globalmente
         let lastTouchEnd = 0;
         document.addEventListener('touchend', (e) => {
             const now = Date.now();
@@ -480,9 +669,15 @@
             player.isDead = false;
             player.fartClouds = [];
             pipes = [];
+            meltingDrops = [];
             score = 0;
+            level = 1;
+            totalPipesPassed = 0;
+            pipeCounter = 0;
             lastPipeSpawn = 0;
+            CONFIG.pipeSpeed = CONFIG.baseSpeed;
             updateScoreDisplay();
+            updateLevelDisplay();
         }
 
         // ===== CONTROLES =====
@@ -513,8 +708,6 @@
             }
         });
 
-        // Los eventos del canvas se registran en initGame()
-
         // ===== GAME LOOP =====
         function gameLoop() {
             if (gameState !== 'playing') return;
@@ -527,11 +720,13 @@
         function update() {
             if (player.isDead) return;
             
+            animationTime += 0.1;
+            
             player.velocity += CONFIG.gravity;
             player.y += player.velocity;
-            
             player.rotation = Math.min(Math.max(player.velocity * 3, -30), 90);
             
+            // Actualizar nubes de pedo
             player.fartClouds.forEach(cloud => {
                 cloud.opacity -= 0.02;
                 cloud.size += 0.5;
@@ -542,19 +737,43 @@
             });
             player.fartClouds = player.fartClouds.filter(c => c.opacity > 0);
             
+            // Actualizar gotas derretidas
+            meltingDrops.forEach(drop => {
+                drop.y += drop.speed;
+                drop.opacity -= 0.01;
+            });
+            meltingDrops = meltingDrops.filter(d => d.opacity > 0 && d.y < canvas.height);
+            
+            // Spawn de tuberías
             const now = Date.now();
             if (now - lastPipeSpawn > CONFIG.spawnInterval) {
                 spawnPipe();
                 lastPipeSpawn = now;
             }
             
+            // Mover tuberías
             pipes.forEach(pipe => {
                 pipe.x -= CONFIG.pipeSpeed;
                 
                 if (!pipe.scored && pipe.x + CONFIG.pipeWidth < player.x) {
                     score++;
+                    totalPipesPassed++;
                     pipe.scored = true;
                     updateScoreDisplay();
+                    checkLevelUp();
+                }
+                
+                // Generar gotas derretidas para retretes en llamas
+                if (!pipe.isCheckpoint && Math.random() < 0.05) {
+                    const toiletY = pipe.gapY + CONFIG.pipeGap;
+                    meltingDrops.push({
+                        x: pipe.x + Math.random() * CONFIG.pipeWidth,
+                        y: toiletY + 20,
+                        speed: 2 + Math.random() * 2,
+                        size: 3 + Math.random() * 4,
+                        opacity: 1,
+                        onFire: true
+                    });
                 }
             });
             
@@ -568,10 +787,15 @@
             const maxGapY = canvas.height - CONFIG.pipeGap - 120;
             const gapY = minGapY + Math.random() * (maxGapY - minGapY);
             
+            pipeCounter++;
+            const isCheckpointPipe = isCheckpoint(pipeCounter);
+            
             pipes.push({
                 x: canvas.width,
                 gapY: gapY,
-                scored: false
+                scored: false,
+                isCheckpoint: isCheckpointPipe,
+                pipeNumber: pipeCounter
             });
         }
 
@@ -652,13 +876,14 @@
             }
             
             document.getElementById('finalScore').textContent = score;
+            document.getElementById('finalLevel').textContent = level;
             document.getElementById('highScore').textContent = highScore;
             document.getElementById('gameOverScreen').classList.remove('hidden');
         }
 
         // ===== RENDERIZADO =====
         function render() {
-            // Fondo degradado de baño
+            // Fondo
             const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
             gradient.addColorStop(0, '#e0f2fe');
             gradient.addColorStop(0.5, '#bae6fd');
@@ -666,7 +891,6 @@
             ctx.fillStyle = gradient;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
-            // Patrón de azulejos
             drawTiles();
             
             // Suelo
@@ -675,8 +899,11 @@
             ctx.fillStyle = '#334155';
             ctx.fillRect(0, canvas.height - 25, canvas.width, 5);
             
-            // Retretes y cadenas
-            drawToilets();
+            // Obstáculos
+            drawObstacles();
+            
+            // Gotas derretidas
+            drawMeltingDrops();
             
             // Nubes de pedo
             drawFartClouds();
@@ -696,125 +923,374 @@
             }
         }
 
-        function drawToilets() {
-            pipes.forEach(pipe => {
-                // ===== CADENA DE RETRETE ARRIBA (colgando) =====
-                const chainX = pipe.x + CONFIG.pipeWidth / 2;
-                const chainEndY = pipe.gapY;
-                
-                // Cadena metálica
-                ctx.strokeStyle = '#94a3b8';
-                ctx.lineWidth = 4;
-                ctx.beginPath();
-                ctx.moveTo(chainX, 0);
-                ctx.lineTo(chainX, chainEndY - 40);
-                ctx.stroke();
-                
-                // Eslabones de la cadena
-                for (let y = 10; y < chainEndY - 50; y += 20) {
+        function drawMeltingDrops() {
+            meltingDrops.forEach(drop => {
+                if (drop.onFire) {
+                    // Gota negra encendida
+                    ctx.fillStyle = `rgba(30, 30, 30, ${drop.opacity})`;
                     ctx.beginPath();
-                    ctx.ellipse(chainX, y, 6, 10, 0, 0, Math.PI * 2);
-                    ctx.strokeStyle = '#64748b';
-                    ctx.lineWidth = 3;
-                    ctx.stroke();
+                    ctx.arc(drop.x, drop.y, drop.size, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Brillo de fuego
+                    ctx.fillStyle = `rgba(251, 146, 60, ${drop.opacity * 0.5})`;
+                    ctx.beginPath();
+                    ctx.arc(drop.x, drop.y - 2, drop.size * 0.5, 0, Math.PI * 2);
+                    ctx.fill();
                 }
-                
-                // Tirador de cadena (bolita)
+            });
+        }
+
+        function drawObstacles() {
+            pipes.forEach(pipe => {
+                if (pipe.isCheckpoint) {
+                    drawCheckpointToilet(pipe);
+                } else {
+                    drawBurningToilet(pipe);
+                }
+                drawIceStalactites(pipe);
+            });
+        }
+
+        function drawCheckpointToilet(pipe) {
+            const toiletY = pipe.gapY + CONFIG.pipeGap;
+            const toiletHeight = canvas.height - toiletY;
+            const centerX = pipe.x + CONFIG.pipeWidth / 2;
+            
+            // Base del retrete BLANCO (checkpoint - sin llamas)
+            ctx.fillStyle = '#f8fafc';
+            ctx.beginPath();
+            ctx.moveTo(pipe.x - 5, toiletY + 35);
+            ctx.lineTo(pipe.x + CONFIG.pipeWidth + 5, toiletY + 35);
+            ctx.lineTo(pipe.x + CONFIG.pipeWidth, toiletY + toiletHeight);
+            ctx.lineTo(pipe.x, toiletY + toiletHeight);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = '#cbd5e1';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            
+            // Tapa blanca
+            ctx.fillStyle = '#f1f5f9';
+            ctx.beginPath();
+            ctx.ellipse(centerX, toiletY + 15, CONFIG.pipeWidth / 2 + 8, 20, 0, Math.PI, 0);
+            ctx.fill();
+            ctx.strokeStyle = '#e2e8f0';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            // Asiento
+            ctx.fillStyle = '#e2e8f0';
+            ctx.beginPath();
+            ctx.ellipse(centerX, toiletY + 20, CONFIG.pipeWidth / 2, 18, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#cbd5e1';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            
+            // Agujero con agua
+            ctx.fillStyle = '#7dd3fc';
+            ctx.beginPath();
+            ctx.ellipse(centerX, toiletY + 22, CONFIG.pipeWidth / 3, 12, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Indicador de checkpoint
+            ctx.fillStyle = '#10b981';
+            ctx.font = 'bold 14px Outfit';
+            ctx.textAlign = 'center';
+            ctx.fillText('✓ CHECKPOINT', centerX, toiletY + 60);
+            ctx.textAlign = 'left';
+            
+            // Estrella brillante
+            ctx.fillStyle = '#fbbf24';
+            ctx.beginPath();
+            ctx.arc(centerX, toiletY - 10, 8 + Math.sin(animationTime * 3) * 2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function drawBurningToilet(pipe) {
+            const toiletY = pipe.gapY + CONFIG.pipeGap;
+            const toiletHeight = canvas.height - toiletY;
+            const centerX = pipe.x + CONFIG.pipeWidth / 2;
+            
+            // Base del retrete BLANCO con manchas negras quemadas
+            ctx.fillStyle = '#f8fafc';
+            ctx.beginPath();
+            ctx.moveTo(pipe.x - 5, toiletY + 35);
+            ctx.lineTo(pipe.x + CONFIG.pipeWidth + 5, toiletY + 35);
+            ctx.lineTo(pipe.x + CONFIG.pipeWidth, toiletY + toiletHeight);
+            ctx.lineTo(pipe.x, toiletY + toiletHeight);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Borde del retrete
+            ctx.strokeStyle = '#cbd5e1';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            
+            // Manchas negras de quemadura (cerca del fuego, arriba)
+            ctx.fillStyle = '#1c1917';
+            for (let i = 0; i < 5; i++) {
+                const mx = pipe.x + 10 + i * 15 + Math.sin(i * 2) * 5;
+                const my = toiletY + 40 + (i % 2) * 10;
+                const mSize = 8 + Math.random() * 6;
                 ctx.beginPath();
-                ctx.arc(chainX, chainEndY - 30, 12, 0, Math.PI * 2);
-                ctx.fillStyle = '#f1f5f9';
+                ctx.ellipse(mx, my, mSize, mSize * 0.6, Math.random(), 0, Math.PI * 2);
                 ctx.fill();
-                ctx.strokeStyle = '#cbd5e1';
-                ctx.lineWidth = 2;
-                ctx.stroke();
-                
-                // Mini retrete colgante (cisterna)
-                const cisternaY = chainEndY - 60;
-                ctx.fillStyle = '#f8fafc';
-                ctx.fillRect(pipe.x + 5, 0, CONFIG.pipeWidth - 10, chainEndY - 30);
-                
-                // Borde de cisterna
-                ctx.fillStyle = '#e2e8f0';
-                ctx.fillRect(pipe.x, chainEndY - 45, CONFIG.pipeWidth, 15);
-                ctx.strokeStyle = '#94a3b8';
-                ctx.lineWidth = 2;
-                ctx.strokeRect(pipe.x, chainEndY - 45, CONFIG.pipeWidth, 15);
-                
-                // ===== RETRETE GIGANTE ABAJO =====
-                const toiletY = pipe.gapY + CONFIG.pipeGap;
-                const toiletHeight = canvas.height - toiletY;
-                
-                // Tapa del retrete (la parte de arriba ovalada)
-                ctx.fillStyle = '#f8fafc';
+            }
+            
+            // Manchas degradadas (gris a negro)
+            ctx.fillStyle = '#374151';
+            for (let i = 0; i < 4; i++) {
+                const mx = pipe.x + 15 + i * 18;
+                const my = toiletY + 70 + (i % 2) * 15;
                 ctx.beginPath();
-                ctx.ellipse(pipe.x + CONFIG.pipeWidth / 2, toiletY + 15, CONFIG.pipeWidth / 2 + 8, 20, 0, Math.PI, 0);
+                ctx.ellipse(mx, my, 6, 4, i * 0.5, 0, Math.PI * 2);
                 ctx.fill();
-                ctx.strokeStyle = '#cbd5e1';
-                ctx.lineWidth = 3;
-                ctx.stroke();
+            }
+            
+            // Grietas de calor en el retrete
+            ctx.strokeStyle = '#f97316';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(pipe.x + 15, toiletY + 50);
+            ctx.lineTo(pipe.x + 25, toiletY + 80);
+            ctx.lineTo(pipe.x + 20, toiletY + 100);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(pipe.x + CONFIG.pipeWidth - 15, toiletY + 55);
+            ctx.lineTo(pipe.x + CONFIG.pipeWidth - 20, toiletY + 85);
+            ctx.stroke();
+            
+            // Tapa blanca con quemaduras
+            ctx.fillStyle = '#f1f5f9';
+            ctx.beginPath();
+            ctx.ellipse(centerX, toiletY + 15, CONFIG.pipeWidth / 2 + 8, 20, 0, Math.PI, 0);
+            ctx.fill();
+            
+            // Manchas en la tapa
+            ctx.fillStyle = '#1c1917';
+            ctx.beginPath();
+            ctx.ellipse(centerX - 15, toiletY + 8, 8, 4, -0.3, 0, Math.PI * 2);
+            ctx.ellipse(centerX + 10, toiletY + 12, 6, 3, 0.4, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Asiento con bordes quemados
+            const seatGradient = ctx.createRadialGradient(centerX, toiletY + 20, 0, centerX, toiletY + 20, CONFIG.pipeWidth / 2);
+            seatGradient.addColorStop(0, '#e2e8f0');
+            seatGradient.addColorStop(0.7, '#f8fafc');
+            seatGradient.addColorStop(1, '#4b5563');
+            
+            ctx.fillStyle = seatGradient;
+            ctx.beginPath();
+            ctx.ellipse(centerX, toiletY + 20, CONFIG.pipeWidth / 2, 18, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#4b5563';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            
+            // Agujero con lava/fuego
+            const lavaGradient = ctx.createRadialGradient(centerX, toiletY + 22, 0, centerX, toiletY + 22, CONFIG.pipeWidth / 3);
+            lavaGradient.addColorStop(0, '#fef08a');
+            lavaGradient.addColorStop(0.4, '#fbbf24');
+            lavaGradient.addColorStop(0.7, '#f97316');
+            lavaGradient.addColorStop(1, '#dc2626');
+            
+            ctx.fillStyle = lavaGradient;
+            ctx.beginPath();
+            ctx.ellipse(centerX, toiletY + 22, CONFIG.pipeWidth / 3, 12, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Dibujar fuego
+            drawFire(pipe.x, toiletY, CONFIG.pipeWidth);
+            
+            // Gotas negras derretidas cayendo por los laterales
+            drawSideMeltingEffect(pipe.x, toiletY, CONFIG.pipeWidth);
+        }
+
+        function drawSideMeltingEffect(x, y, width) {
+            // Gotas negras encendidas cayendo por los lados
+            for (let side = 0; side < 2; side++) {
+                const sideX = side === 0 ? x - 3 : x + width + 3;
                 
-                // Asiento del retrete
-                ctx.fillStyle = '#f1f5f9';
+                for (let i = 0; i < 3; i++) {
+                    const dropY = y + 40 + ((animationTime * 30 + i * 40 + side * 20) % 80);
+                    const dropOpacity = 1 - ((animationTime * 30 + i * 40 + side * 20) % 80) / 80;
+                    
+                    if (dropOpacity > 0) {
+                        // Gota negra
+                        ctx.fillStyle = `rgba(28, 25, 23, ${dropOpacity})`;
+                        ctx.beginPath();
+                        ctx.ellipse(sideX + Math.sin(animationTime + i) * 2, dropY, 4, 6, 0, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        // Brillo de fuego en la gota
+                        ctx.fillStyle = `rgba(251, 146, 60, ${dropOpacity * 0.7})`;
+                        ctx.beginPath();
+                        ctx.arc(sideX + Math.sin(animationTime + i) * 2, dropY - 3, 2, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+            }
+            
+            // Chorros de material derretido
+            ctx.strokeStyle = 'rgba(28, 25, 23, 0.6)';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(x - 2, y + 35);
+            ctx.quadraticCurveTo(x - 5, y + 70, x - 3, y + 100);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(x + width + 2, y + 35);
+            ctx.quadraticCurveTo(x + width + 5, y + 65, x + width + 3, y + 95);
+            ctx.stroke();
+        }
+
+        function drawFire(x, y, width) {
+            const flameCount = 7;
+            
+            for (let i = 0; i < flameCount; i++) {
+                const flameX = x + (width / (flameCount + 1)) * (i + 1);
+                const flameOffset = Math.sin(animationTime * 4 + i * 1.5) * 5;
+                const flameHeight = 25 + Math.sin(animationTime * 6 + i * 2) * 10;
+                
+                // Llama exterior (roja)
+                ctx.fillStyle = 'rgba(220, 38, 38, 0.8)';
                 ctx.beginPath();
-                ctx.ellipse(pipe.x + CONFIG.pipeWidth / 2, toiletY + 20, CONFIG.pipeWidth / 2, 18, 0, 0, Math.PI * 2);
+                ctx.moveTo(flameX - 8, y + 15);
+                ctx.quadraticCurveTo(flameX + flameOffset, y - flameHeight, flameX + 8, y + 15);
                 ctx.fill();
-                ctx.strokeStyle = '#94a3b8';
-                ctx.lineWidth = 2;
-                ctx.stroke();
                 
-                // Agujero negro del retrete
-                ctx.fillStyle = '#1e293b';
+                // Llama media (naranja)
+                ctx.fillStyle = 'rgba(249, 115, 22, 0.85)';
                 ctx.beginPath();
-                ctx.ellipse(pipe.x + CONFIG.pipeWidth / 2, toiletY + 22, CONFIG.pipeWidth / 3, 12, 0, 0, Math.PI * 2);
+                ctx.moveTo(flameX - 5, y + 15);
+                ctx.quadraticCurveTo(flameX + flameOffset * 0.7, y - flameHeight * 0.7, flameX + 5, y + 15);
                 ctx.fill();
                 
-                // Base del retrete (taza)
-                ctx.fillStyle = '#f8fafc';
+                // Llama interior (amarilla)
+                ctx.fillStyle = 'rgba(251, 191, 36, 0.9)';
                 ctx.beginPath();
-                ctx.moveTo(pipe.x - 5, toiletY + 35);
-                ctx.lineTo(pipe.x + CONFIG.pipeWidth + 5, toiletY + 35);
-                ctx.lineTo(pipe.x + CONFIG.pipeWidth, toiletY + toiletHeight);
-                ctx.lineTo(pipe.x, toiletY + toiletHeight);
+                ctx.moveTo(flameX - 3, y + 15);
+                ctx.quadraticCurveTo(flameX + flameOffset * 0.4, y - flameHeight * 0.5, flameX + 3, y + 15);
+                ctx.fill();
+                
+                // Núcleo blanco
+                ctx.fillStyle = 'rgba(254, 249, 195, 0.9)';
+                ctx.beginPath();
+                ctx.ellipse(flameX, y + 10, 2, 4, 0, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // Chispas
+            for (let i = 0; i < 5; i++) {
+                const sparkX = x + 15 + (i * 15) + Math.sin(animationTime * 3 + i) * 8;
+                const sparkY = y - 10 - ((animationTime * 15 + i * 20) % 40);
+                const sparkAlpha = 1 - ((animationTime * 15 + i * 20) % 40) / 40;
+                
+                ctx.fillStyle = `rgba(251, 191, 36, ${sparkAlpha})`;
+                ctx.beginPath();
+                ctx.arc(sparkX, sparkY, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // Humo
+            for (let i = 0; i < 3; i++) {
+                const smokeX = x + width / 2 + Math.sin(animationTime * 2 + i * 2) * 15;
+                const smokeY = y - 30 - ((animationTime * 10 + i * 30) % 50);
+                const smokeAlpha = 0.3 - ((animationTime * 10 + i * 30) % 50) / 150;
+                const smokeSize = 8 + ((animationTime * 10 + i * 30) % 50) / 5;
+                
+                if (smokeAlpha > 0) {
+                    ctx.fillStyle = `rgba(30, 30, 30, ${smokeAlpha})`;
+                    ctx.beginPath();
+                    ctx.arc(smokeX, smokeY, smokeSize, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+        }
+
+        function drawIceStalactites(pipe) {
+            const iceEndY = pipe.gapY;
+            const centerX = pipe.x + CONFIG.pipeWidth / 2;
+            
+            // Bloque de hielo
+            const iceGradient = ctx.createLinearGradient(pipe.x, 0, pipe.x + CONFIG.pipeWidth, 0);
+            iceGradient.addColorStop(0, '#a5f3fc');
+            iceGradient.addColorStop(0.3, '#ecfeff');
+            iceGradient.addColorStop(0.5, '#cffafe');
+            iceGradient.addColorStop(0.7, '#ecfeff');
+            iceGradient.addColorStop(1, '#a5f3fc');
+            
+            ctx.fillStyle = iceGradient;
+            ctx.fillRect(pipe.x, 0, CONFIG.pipeWidth, iceEndY - 40);
+            
+            ctx.strokeStyle = '#67e8f9';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(pipe.x, 0, CONFIG.pipeWidth, iceEndY - 40);
+            
+            // Estalactitas
+            const iciclePositions = [0.15, 0.35, 0.5, 0.65, 0.85];
+            iciclePositions.forEach((pos, i) => {
+                const icicleX = pipe.x + CONFIG.pipeWidth * pos;
+                const icicleHeight = 25 + (i % 2) * 20 + Math.sin(animationTime + i) * 3;
+                const icicleWidth = 8 + (i % 2) * 4;
+                
+                const icicleGrad = ctx.createLinearGradient(icicleX - icicleWidth/2, iceEndY - 40, icicleX + icicleWidth/2, iceEndY - 40);
+                icicleGrad.addColorStop(0, '#a5f3fc');
+                icicleGrad.addColorStop(0.5, '#ecfeff');
+                icicleGrad.addColorStop(1, '#67e8f9');
+                
+                ctx.fillStyle = icicleGrad;
+                ctx.beginPath();
+                ctx.moveTo(icicleX - icicleWidth/2, iceEndY - 40);
+                ctx.lineTo(icicleX + icicleWidth/2, iceEndY - 40);
+                ctx.lineTo(icicleX, iceEndY - 40 + icicleHeight);
                 ctx.closePath();
                 ctx.fill();
-                ctx.strokeStyle = '#e2e8f0';
-                ctx.lineWidth = 2;
-                ctx.stroke();
                 
-                // Detalles de la taza
-                ctx.strokeStyle = '#cbd5e1';
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
                 ctx.lineWidth = 1;
                 ctx.beginPath();
-                ctx.moveTo(pipe.x + 10, toiletY + 60);
-                ctx.lineTo(pipe.x + 10, toiletY + toiletHeight - 20);
-                ctx.moveTo(pipe.x + CONFIG.pipeWidth - 10, toiletY + 60);
-                ctx.lineTo(pipe.x + CONFIG.pipeWidth - 10, toiletY + toiletHeight - 20);
+                ctx.moveTo(icicleX - 2, iceEndY - 38);
+                ctx.lineTo(icicleX - 1, iceEndY - 40 + icicleHeight - 5);
                 ctx.stroke();
-                
-                // Agua en el retrete
-                ctx.fillStyle = 'rgba(56, 189, 248, 0.4)';
-                ctx.beginPath();
-                ctx.ellipse(pipe.x + CONFIG.pipeWidth / 2, toiletY + 25, CONFIG.pipeWidth / 3 - 3, 8, 0, 0, Math.PI * 2);
-                ctx.fill();
             });
+            
+            // Gotas de agua
+            ctx.fillStyle = 'rgba(103, 232, 249, 0.7)';
+            const dropY = ((animationTime * 20) % 60);
+            if (dropY < 50) {
+                ctx.beginPath();
+                ctx.ellipse(centerX, iceEndY - 20 + dropY, 3, 5, 0, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // Cristales de escarcha
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < 4; i++) {
+                const fx = pipe.x + 15 + i * 18;
+                const fy = 20 + (i % 2) * 30;
+                ctx.beginPath();
+                ctx.moveTo(fx, fy - 5);
+                ctx.lineTo(fx, fy + 5);
+                ctx.moveTo(fx - 4, fy - 3);
+                ctx.lineTo(fx + 4, fy + 3);
+                ctx.moveTo(fx + 4, fy - 3);
+                ctx.lineTo(fx - 4, fy + 3);
+                ctx.stroke();
+            }
         }
 
         function drawFartClouds() {
             player.fartClouds.forEach(cloud => {
                 cloud.particles.forEach(p => {
                     ctx.beginPath();
-                    ctx.arc(
-                        cloud.x + p.x,
-                        cloud.y + p.y,
-                        p.size * (cloud.size / 20),
-                        0,
-                        Math.PI * 2
-                    );
-                    // Color marrón verdoso para el pedo
+                    ctx.arc(cloud.x + p.x, cloud.y + p.y, p.size * (cloud.size / 20), 0, Math.PI * 2);
                     const g = Math.floor(100 + Math.random() * 50);
                     ctx.fillStyle = `rgba(120, ${g}, 40, ${cloud.opacity * 0.6})`;
                     ctx.fill();
-                    
                     ctx.strokeStyle = `rgba(80, 120, 40, ${cloud.opacity * 0.3})`;
                     ctx.lineWidth = 2;
                     ctx.stroke();
@@ -830,20 +1306,16 @@
             const offsetX = -player.width / 2;
             const offsetY = -player.height / 2;
             
-            // ===== PERSONA SENTADA EN RETRETE LEYENDO REVISTA =====
-            
-            // Piernas (dobladas como sentado)
+            // Piernas
             ctx.strokeStyle = '#fcd34d';
             ctx.lineWidth = 8;
             ctx.lineCap = 'round';
             
-            // Pierna izquierda
             ctx.beginPath();
             ctx.moveTo(offsetX + 30, offsetY + 75);
             ctx.quadraticCurveTo(offsetX + 15, offsetY + 90, offsetX + 20, offsetY + 105);
             ctx.stroke();
             
-            // Pierna derecha
             ctx.beginPath();
             ctx.moveTo(offsetX + 60, offsetY + 75);
             ctx.quadraticCurveTo(offsetX + 75, offsetY + 90, offsetX + 70, offsetY + 105);
@@ -858,7 +1330,7 @@
             ctx.ellipse(offsetX + 72, offsetY + 108, 8, 5, 0.3, 0, Math.PI * 2);
             ctx.fill();
             
-            // Cuerpo (torso)
+            // Cuerpo
             ctx.fillStyle = '#3b82f6';
             ctx.beginPath();
             ctx.ellipse(offsetX + 45, offsetY + 60, 22, 25, 0, 0, Math.PI * 2);
@@ -867,40 +1339,35 @@
             ctx.lineWidth = 2;
             ctx.stroke();
             
-            // Brazos sosteniendo revista
+            // Brazos
             ctx.strokeStyle = '#fcd34d';
             ctx.lineWidth = 7;
             ctx.lineCap = 'round';
             
-            // Brazo izquierdo
             ctx.beginPath();
             ctx.moveTo(offsetX + 25, offsetY + 55);
             ctx.quadraticCurveTo(offsetX + 15, offsetY + 60, offsetX + 25, offsetY + 70);
             ctx.stroke();
             
-            // Brazo derecho
             ctx.beginPath();
             ctx.moveTo(offsetX + 65, offsetY + 55);
             ctx.quadraticCurveTo(offsetX + 75, offsetY + 60, offsetX + 65, offsetY + 70);
             ctx.stroke();
             
-            // Revista (cubriendo zona)
-            ctx.fillStyle = '#ef4444';
+            // Revista BLANCA con texto "ME CAGO"
+            ctx.fillStyle = '#f8fafc';
             ctx.fillRect(offsetX + 20, offsetY + 58, 50, 35);
-            ctx.strokeStyle = '#b91c1c';
+            ctx.strokeStyle = '#1e293b';
             ctx.lineWidth = 2;
             ctx.strokeRect(offsetX + 20, offsetY + 58, 50, 35);
             
-            // Líneas de texto en revista
-            ctx.fillStyle = '#fef2f2';
-            for (let i = 0; i < 4; i++) {
-                ctx.fillRect(offsetX + 25, offsetY + 65 + i * 7, 40, 3);
-            }
-            
-            // Título de revista
-            ctx.fillStyle = '#fef2f2';
-            ctx.font = 'bold 8px Arial';
-            ctx.fillText('WC NEWS', offsetX + 28, offsetY + 70);
+            // Texto "ME CAGO" en la revista
+            ctx.fillStyle = '#1e293b';
+            ctx.font = 'bold 9px Outfit';
+            ctx.textAlign = 'center';
+            ctx.fillText('ME', offsetX + 45, offsetY + 72);
+            ctx.fillText('CAGO', offsetX + 45, offsetY + 84);
+            ctx.textAlign = 'left';
             
             // Manos
             ctx.fillStyle = '#fcd34d';
@@ -909,10 +1376,10 @@
             ctx.arc(offsetX + 68, offsetY + 72, 6, 0, Math.PI * 2);
             ctx.fill();
             
-            // ===== ROSTRO GRANDE =====
+            // Rostro
             const faceY = offsetY + 22;
             const faceX = offsetX + 45;
-            const faceSize = 50; // Rostro mucho más grande
+            const faceSize = 50;
             
             if (customFace) {
                 ctx.save();
@@ -922,7 +1389,6 @@
                 ctx.drawImage(customFace, faceX - faceSize/2, faceY - faceSize/2, faceSize, faceSize);
                 ctx.restore();
                 
-                // Borde del rostro
                 ctx.beginPath();
                 ctx.arc(faceX, faceY, faceSize / 2, 0, Math.PI * 2);
                 ctx.strokeStyle = '#e2e8f0';
@@ -930,23 +1396,19 @@
                 ctx.stroke();
                 
                 if (player.isDead) {
-                    // Overlay rojo
                     ctx.fillStyle = 'rgba(220, 38, 38, 0.6)';
                     ctx.beginPath();
                     ctx.arc(faceX, faceY, faceSize / 2, 0, Math.PI * 2);
                     ctx.fill();
                     
-                    // X en los ojos
                     ctx.strokeStyle = '#000';
                     ctx.lineWidth = 4;
-                    // Ojo izquierdo X
                     ctx.beginPath();
                     ctx.moveTo(faceX - 14, faceY - 10);
                     ctx.lineTo(faceX - 4, faceY);
                     ctx.moveTo(faceX - 4, faceY - 10);
                     ctx.lineTo(faceX - 14, faceY);
                     ctx.stroke();
-                    // Ojo derecho X
                     ctx.beginPath();
                     ctx.moveTo(faceX + 4, faceY - 10);
                     ctx.lineTo(faceX + 14, faceY);
@@ -954,14 +1416,12 @@
                     ctx.lineTo(faceX + 4, faceY);
                     ctx.stroke();
                     
-                    // Boca en shock
                     ctx.beginPath();
                     ctx.arc(faceX, faceY + 12, 8, 0, Math.PI * 2);
                     ctx.fillStyle = '#000';
                     ctx.fill();
                 }
             } else {
-                // Rostro por defecto
                 ctx.beginPath();
                 ctx.arc(faceX, faceY, faceSize / 2, 0, Math.PI * 2);
                 ctx.fillStyle = '#fcd34d';
@@ -971,17 +1431,14 @@
                 ctx.stroke();
                 
                 if (player.isDead) {
-                    // Cara muerta
                     ctx.strokeStyle = '#dc2626';
                     ctx.lineWidth = 4;
-                    // Ojo izquierdo X
                     ctx.beginPath();
                     ctx.moveTo(faceX - 14, faceY - 10);
                     ctx.lineTo(faceX - 4, faceY);
                     ctx.moveTo(faceX - 4, faceY - 10);
                     ctx.lineTo(faceX - 14, faceY);
                     ctx.stroke();
-                    // Ojo derecho X
                     ctx.beginPath();
                     ctx.moveTo(faceX + 4, faceY - 10);
                     ctx.lineTo(faceX + 14, faceY);
@@ -989,7 +1446,6 @@
                     ctx.lineTo(faceX + 4, faceY);
                     ctx.stroke();
                     
-                    // Lengua afuera
                     ctx.fillStyle = '#f87171';
                     ctx.beginPath();
                     ctx.ellipse(faceX, faceY + 18, 6, 10, 0, 0, Math.PI * 2);
@@ -998,7 +1454,7 @@
                     ctx.lineWidth = 2;
                     ctx.stroke();
                 } else {
-                    // Ojos normales (esfuerzo)
+                    // Ojos
                     ctx.fillStyle = '#FFF';
                     ctx.beginPath();
                     ctx.ellipse(faceX - 10, faceY - 5, 8, 10, 0, 0, Math.PI * 2);
@@ -1008,14 +1464,13 @@
                     ctx.lineWidth = 2;
                     ctx.stroke();
                     
-                    // Pupilas mirando hacia arriba (esfuerzo)
                     ctx.fillStyle = '#000';
                     ctx.beginPath();
                     ctx.arc(faceX - 10, faceY - 7, 4, 0, Math.PI * 2);
                     ctx.arc(faceX + 10, faceY - 7, 4, 0, Math.PI * 2);
                     ctx.fill();
                     
-                    // Cejas de esfuerzo
+                    // Cejas
                     ctx.strokeStyle = '#92400e';
                     ctx.lineWidth = 3;
                     ctx.beginPath();
@@ -1025,7 +1480,7 @@
                     ctx.lineTo(faceX + 16, faceY - 14);
                     ctx.stroke();
                     
-                    // Boca de esfuerzo (apretada)
+                    // Boca
                     ctx.strokeStyle = '#92400e';
                     ctx.lineWidth = 3;
                     ctx.beginPath();
@@ -1033,13 +1488,13 @@
                     ctx.quadraticCurveTo(faceX, faceY + 8, faceX + 10, faceY + 12);
                     ctx.stroke();
                     
-                    // Gotas de sudor
+                    // Sudor
                     ctx.fillStyle = '#7dd3fc';
                     ctx.beginPath();
                     ctx.ellipse(faceX - 22, faceY - 5, 3, 5, 0.3, 0, Math.PI * 2);
                     ctx.fill();
                     
-                    // Mejillas rojas de esfuerzo
+                    // Mejillas
                     ctx.fillStyle = 'rgba(248, 113, 113, 0.5)';
                     ctx.beginPath();
                     ctx.arc(faceX - 18, faceY + 5, 6, 0, Math.PI * 2);
@@ -1048,19 +1503,14 @@
                 }
             }
             
-            // Efecto de gas saliendo cuando salta
+            // Efecto de gas
             if (!player.isDead && player.velocity < -2) {
                 ctx.strokeStyle = 'rgba(100, 140, 80, 0.7)';
                 ctx.lineWidth = 3;
                 for (let i = 0; i < 4; i++) {
                     ctx.beginPath();
                     ctx.moveTo(offsetX + 35 + i * 5, offsetY + 100);
-                    ctx.quadraticCurveTo(
-                        offsetX + 30 + i * 3, 
-                        offsetY + 110 + i * 3,
-                        offsetX + 25 - i * 5, 
-                        offsetY + 115 + i * 5
-                    );
+                    ctx.quadraticCurveTo(offsetX + 30 + i * 3, offsetY + 110 + i * 3, offsetX + 25 - i * 5, offsetY + 115 + i * 5);
                     ctx.stroke();
                 }
             }
@@ -1102,7 +1552,6 @@
             if (!audioContext) initAudio();
         }, { once: true });
         
-        // Prevenir comportamiento por defecto en el body para evitar scroll/zoom
         document.body.addEventListener('touchmove', (e) => {
             if (gameState === 'playing') {
                 e.preventDefault();
