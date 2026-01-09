@@ -108,42 +108,73 @@
             50% { transform: scale(1.05); }
         }
         
-        .tap-hint {
-            animation: bounce 1s ease-in-out infinite;
+        .fart-btn {
+            transition: all 0.2s ease;
+            border: 2px solid transparent;
         }
         
-        @keyframes bounce {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-10px); }
+        .fart-btn:hover {
+            transform: scale(1.05);
+        }
+        
+        .fart-btn.selected {
+            border-color: #8b5cf6;
+            box-shadow: 0 0 15px rgba(139, 92, 246, 0.5);
         }
     </style>
 </head>
 <body class="flex flex-col items-center justify-center p-4">
     <!-- Pantalla de inicio -->
-    <div id="startScreen" class="text-center">
-        <h1 class="text-5xl md:text-7xl font-extrabold title-gradient mb-2 tracking-tight">🚽 FLAPPY PEDO 💨</h1>
-        <p class="text-xl text-purple-300 mb-8 subtitle-glow font-semibold italic">"Que los gases te acompañen"</p>
+    <div id="startScreen" class="text-center max-w-lg mx-auto">
+        <h1 class="text-4xl md:text-6xl font-extrabold title-gradient mb-2 tracking-tight">🚽 FLAPPY PEDO 💨</h1>
+        <p class="text-lg text-purple-300 mb-6 subtitle-glow font-semibold italic">"Que los gases te acompañen"</p>
         
-        <div class="glass-card rounded-2xl p-6 mb-6 max-w-md mx-auto">
-            <h3 class="text-2xl text-white mb-4 font-semibold">📸 Personaliza tu rostro</h3>
-            <label class="btn-game text-lg px-6 py-3 rounded-xl cursor-pointer inline-block text-white">
+        <div class="glass-card rounded-2xl p-4 mb-4">
+            <h3 class="text-xl text-white mb-3 font-semibold">📸 Personaliza tu rostro</h3>
+            <label class="btn-game text-base px-5 py-2 rounded-xl cursor-pointer inline-block text-white">
                 Subir Foto
                 <input type="file" id="imageInput" accept="image/*" class="hidden">
             </label>
-            <p class="text-gray-400 mt-3 text-sm">O juega con el rostro por defecto</p>
-            <div id="previewContainer" class="mt-4 hidden">
-                <img id="facePreview" class="w-24 h-24 rounded-full mx-auto border-4 border-purple-500 object-cover">
-                <p class="text-green-400 mt-2 font-semibold">✓ Rostro cargado</p>
+            <p class="text-gray-400 mt-2 text-xs">O juega con el rostro por defecto</p>
+            <div id="previewContainer" class="mt-3 hidden">
+                <img id="facePreview" class="w-20 h-20 rounded-full mx-auto border-4 border-purple-500 object-cover">
+                <p class="text-green-400 mt-1 font-semibold text-sm">✓ Rostro cargado</p>
             </div>
         </div>
         
-        <button id="startBtn" class="btn-game text-2xl px-12 py-4 rounded-2xl text-white">
+        <!-- Selector de sonido de pedo -->
+        <div class="glass-card rounded-2xl p-4 mb-4">
+            <h3 class="text-xl text-white mb-3 font-semibold">💨 Elige tu flatulencia</h3>
+            <div class="grid grid-cols-4 gap-2" id="fartSelector">
+                <button class="fart-btn selected bg-gradient-to-br from-amber-600 to-amber-800 text-white p-3 rounded-xl text-center" data-fart="classic">
+                    <div class="text-2xl">💨</div>
+                    <div class="text-xs mt-1">Clásico</div>
+                </button>
+                <button class="fart-btn bg-gradient-to-br from-green-600 to-green-800 text-white p-3 rounded-xl text-center" data-fart="wet">
+                    <div class="text-2xl">💦</div>
+                    <div class="text-xs mt-1">Húmedo</div>
+                </button>
+                <button class="fart-btn bg-gradient-to-br from-red-600 to-red-800 text-white p-3 rounded-xl text-center" data-fart="thunder">
+                    <div class="text-2xl">⚡</div>
+                    <div class="text-xs mt-1">Trueno</div>
+                </button>
+                <button class="fart-btn bg-gradient-to-br from-purple-600 to-purple-800 text-white p-3 rounded-xl text-center" data-fart="squeaky">
+                    <div class="text-2xl">🎺</div>
+                    <div class="text-xs mt-1">Chillón</div>
+                </button>
+            </div>
+            <button id="testFartBtn" class="mt-3 bg-gray-700 hover:bg-gray-600 px-4 py-1 rounded-lg text-white text-sm transition-all">
+                🔊 Probar sonido
+            </button>
+        </div>
+        
+        <button id="startBtn" class="btn-game text-xl px-10 py-3 rounded-2xl text-white">
             ¡JUGAR! 🎮
         </button>
         
-        <div class="mt-6 text-gray-500 text-sm">
+        <div class="mt-4 text-gray-500 text-xs">
             <p>Toca la pantalla o presiona ESPACIO para... expulsar gases 💨</p>
-            <p class="mt-2 text-purple-400">🏆 10 niveles | 15 retretes por nivel | ¡Supera el récord!</p>
+            <p class="mt-1 text-purple-400">🏆 10 niveles | 15 retretes por nivel | ¡Supera el récord!</p>
         </div>
     </div>
     
@@ -230,22 +261,29 @@
     <script>
         // ===== CONFIGURACIÓN DEL JUEGO =====
         const CONFIG = {
-            gravity: 0.35,
-            jumpForce: -7.5,
+            // Gravedad muy reducida y progresiva
+            baseGravity: 0.18,
+            gravity: 0.18,
+            gravityIncrement: 0.015,
+            
+            jumpForce: -5.5,
             pipeGap: 180,
             pipeWidth: 80,
-            initialSpeed: 1.5,
-            baseSpeed: 1.5,
-            pipeSpeed: 1.5,
-            spawnInterval: 2200,
+            
+            // Velocidad inicial muy lenta
+            initialSpeed: 1.2,
+            baseSpeed: 1.2,
+            pipeSpeed: 1.2,
+            speedIncrement: 0.2,
+            
+            spawnInterval: 2500,
             pipesPerLevel: 15,
-            maxLevel: 10,
-            speedIncrement: 0.25
+            maxLevel: 10
         };
 
         // ===== VARIABLES GLOBALES =====
         let canvas, ctx;
-        let gameState = 'menu'; // menu, ready, playing, gameover
+        let gameState = 'menu';
         let score = 0;
         let level = 1;
         let totalPipesPassed = 0;
@@ -253,6 +291,7 @@
         let customFace = null;
         let audioContext = null;
         let animationId = null;
+        let selectedFart = 'classic';
 
         // Estado del jugador
         const player = {
@@ -264,6 +303,15 @@
             rotation: 0,
             isDead: false,
             fartClouds: []
+        };
+
+        // Fondo urbano animado
+        const cityscape = {
+            buildings: [],
+            clouds: [],
+            birds: [],
+            scrollX: 0,
+            initialized: false
         };
 
         // Obstáculos y efectos
@@ -289,27 +337,151 @@
                 }
             },
             
-            playFart() {
+            playFart(type = selectedFart) {
                 this.init();
-                const duration = 0.12 + Math.random() * 0.08;
                 
+                switch(type) {
+                    case 'classic':
+                        this.playClassicFart();
+                        break;
+                    case 'wet':
+                        this.playWetFart();
+                        break;
+                    case 'thunder':
+                        this.playThunderFart();
+                        break;
+                    case 'squeaky':
+                        this.playSqueakyFart();
+                        break;
+                }
+            },
+            
+            playClassicFart() {
+                const duration = 0.15 + Math.random() * 0.1;
                 const osc = audioContext.createOscillator();
                 const gain = audioContext.createGain();
                 const filter = audioContext.createBiquadFilter();
                 
                 osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(70 + Math.random() * 30, audioContext.currentTime);
-                osc.frequency.exponentialRampToValueAtTime(35, audioContext.currentTime + duration);
+                osc.frequency.setValueAtTime(80 + Math.random() * 30, audioContext.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(40, audioContext.currentTime + duration);
                 
                 filter.type = 'lowpass';
-                filter.frequency.value = 180;
+                filter.frequency.value = 200;
                 
-                gain.gain.setValueAtTime(0.25, audioContext.currentTime);
+                gain.gain.setValueAtTime(0.3, audioContext.currentTime);
                 gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
                 
                 osc.connect(filter).connect(gain).connect(audioContext.destination);
                 osc.start();
                 osc.stop(audioContext.currentTime + duration);
+            },
+            
+            playWetFart() {
+                const duration = 0.25;
+                
+                // Oscilador principal
+                const osc = audioContext.createOscillator();
+                const gain = audioContext.createGain();
+                const filter = audioContext.createBiquadFilter();
+                
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(60, audioContext.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(30, audioContext.currentTime + duration);
+                
+                filter.type = 'lowpass';
+                filter.frequency.value = 150;
+                filter.Q.value = 5;
+                
+                gain.gain.setValueAtTime(0.25, audioContext.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
+                
+                // Ruido para efecto húmedo
+                const bufferSize = audioContext.sampleRate * duration;
+                const noiseBuffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
+                const output = noiseBuffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    output[i] = Math.random() * 2 - 1;
+                }
+                
+                const noise = audioContext.createBufferSource();
+                noise.buffer = noiseBuffer;
+                const noiseGain = audioContext.createGain();
+                const noiseFilter = audioContext.createBiquadFilter();
+                noiseFilter.type = 'bandpass';
+                noiseFilter.frequency.value = 800;
+                noiseGain.gain.setValueAtTime(0.08, audioContext.currentTime);
+                noiseGain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
+                
+                osc.connect(filter).connect(gain).connect(audioContext.destination);
+                noise.connect(noiseFilter).connect(noiseGain).connect(audioContext.destination);
+                
+                osc.start();
+                noise.start();
+                osc.stop(audioContext.currentTime + duration);
+                noise.stop(audioContext.currentTime + duration);
+            },
+            
+            playThunderFart() {
+                const duration = 0.3;
+                
+                const osc = audioContext.createOscillator();
+                const gain = audioContext.createGain();
+                const filter = audioContext.createBiquadFilter();
+                
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(50, audioContext.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(25, audioContext.currentTime + duration);
+                
+                filter.type = 'lowpass';
+                filter.frequency.value = 100;
+                
+                gain.gain.setValueAtTime(0.4, audioContext.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
+                
+                // Sub-bass
+                const sub = audioContext.createOscillator();
+                const subGain = audioContext.createGain();
+                sub.type = 'sine';
+                sub.frequency.value = 35;
+                subGain.gain.setValueAtTime(0.3, audioContext.currentTime);
+                subGain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
+                
+                osc.connect(filter).connect(gain).connect(audioContext.destination);
+                sub.connect(subGain).connect(audioContext.destination);
+                
+                osc.start();
+                sub.start();
+                osc.stop(audioContext.currentTime + duration);
+                sub.stop(audioContext.currentTime + duration);
+            },
+            
+            playSqueakyFart() {
+                const duration = 0.12;
+                
+                const osc = audioContext.createOscillator();
+                const gain = audioContext.createGain();
+                
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(400 + Math.random() * 200, audioContext.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(200, audioContext.currentTime + duration);
+                
+                gain.gain.setValueAtTime(0.2, audioContext.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
+                
+                // Vibrato
+                const vibrato = audioContext.createOscillator();
+                const vibratoGain = audioContext.createGain();
+                vibrato.frequency.value = 30;
+                vibratoGain.gain.value = 50;
+                vibrato.connect(vibratoGain).connect(osc.frequency);
+                
+                osc.connect(gain).connect(audioContext.destination);
+                
+                osc.start();
+                vibrato.start();
+                osc.stop(audioContext.currentTime + duration);
+                vibrato.stop(audioContext.currentTime + duration);
             },
             
             playLevelUp() {
@@ -355,6 +527,163 @@
                 osc.connect(gain).connect(audioContext.destination);
                 osc.start();
                 osc.stop(audioContext.currentTime + 0.3);
+            }
+        };
+
+        // ===== PAISAJE URBANO =====
+        const Cityscape = {
+            init() {
+                if (cityscape.initialized) return;
+                
+                // Crear edificios de fondo
+                for (let i = 0; i < 15; i++) {
+                    cityscape.buildings.push({
+                        x: i * 80 - 100,
+                        width: 50 + Math.random() * 40,
+                        height: 100 + Math.random() * 150,
+                        color: this.randomBuildingColor(),
+                        windows: Math.floor(Math.random() * 8) + 3,
+                        windowRows: Math.floor(Math.random() * 5) + 3,
+                        layer: Math.random() > 0.5 ? 'back' : 'front'
+                    });
+                }
+                
+                // Crear nubes
+                for (let i = 0; i < 6; i++) {
+                    cityscape.clouds.push({
+                        x: Math.random() * 500,
+                        y: 20 + Math.random() * 60,
+                        size: 20 + Math.random() * 30,
+                        speed: 0.2 + Math.random() * 0.3
+                    });
+                }
+                
+                // Crear pájaros
+                for (let i = 0; i < 4; i++) {
+                    cityscape.birds.push({
+                        x: Math.random() * 400,
+                        y: 30 + Math.random() * 80,
+                        wingPhase: Math.random() * Math.PI * 2,
+                        speed: 0.5 + Math.random() * 0.5
+                    });
+                }
+                
+                cityscape.initialized = true;
+            },
+            
+            randomBuildingColor() {
+                const colors = ['#1e293b', '#334155', '#475569', '#374151', '#4b5563', '#1f2937'];
+                return colors[Math.floor(Math.random() * colors.length)];
+            },
+            
+            update() {
+                // Mover nubes
+                cityscape.clouds.forEach(cloud => {
+                    cloud.x -= cloud.speed * 0.5;
+                    if (cloud.x < -50) cloud.x = canvas.width + 50;
+                });
+                
+                // Mover pájaros
+                cityscape.birds.forEach(bird => {
+                    bird.x -= bird.speed;
+                    bird.wingPhase += 0.3;
+                    if (bird.x < -20) {
+                        bird.x = canvas.width + 20;
+                        bird.y = 30 + Math.random() * 80;
+                    }
+                });
+                
+                // Scroll de edificios
+                if (gameState === 'playing') {
+                    cityscape.scrollX += CONFIG.pipeSpeed * 0.3;
+                }
+            },
+            
+            draw() {
+                // Cielo con degradado
+                const skyGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+                skyGradient.addColorStop(0, '#fef3c7');
+                skyGradient.addColorStop(0.3, '#fde68a');
+                skyGradient.addColorStop(0.6, '#fbbf24');
+                skyGradient.addColorStop(1, '#f97316');
+                ctx.fillStyle = skyGradient;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // Sol
+                ctx.fillStyle = '#fef08a';
+                ctx.beginPath();
+                ctx.arc(canvas.width - 60, 50, 35, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#fde047';
+                ctx.beginPath();
+                ctx.arc(canvas.width - 60, 50, 25, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Nubes
+                cityscape.clouds.forEach(cloud => {
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                    ctx.beginPath();
+                    ctx.arc(cloud.x, cloud.y, cloud.size, 0, Math.PI * 2);
+                    ctx.arc(cloud.x + cloud.size * 0.6, cloud.y - cloud.size * 0.2, cloud.size * 0.7, 0, Math.PI * 2);
+                    ctx.arc(cloud.x - cloud.size * 0.5, cloud.y + cloud.size * 0.1, cloud.size * 0.6, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+                
+                // Edificios de fondo (lejanos)
+                cityscape.buildings.filter(b => b.layer === 'back').forEach(building => {
+                    const x = ((building.x - cityscape.scrollX * 0.3) % (canvas.width + 200)) - 100;
+                    this.drawBuilding(x, building, 0.6);
+                });
+                
+                // Edificios de frente (cercanos)
+                cityscape.buildings.filter(b => b.layer === 'front').forEach(building => {
+                    const x = ((building.x - cityscape.scrollX * 0.5) % (canvas.width + 200)) - 100;
+                    this.drawBuilding(x, building, 1);
+                });
+                
+                // Pájaros
+                cityscape.birds.forEach(bird => {
+                    ctx.fillStyle = '#1e293b';
+                    ctx.beginPath();
+                    const wingY = Math.sin(bird.wingPhase) * 3;
+                    ctx.moveTo(bird.x, bird.y);
+                    ctx.quadraticCurveTo(bird.x - 5, bird.y - 3 + wingY, bird.x - 10, bird.y + wingY);
+                    ctx.quadraticCurveTo(bird.x + 5, bird.y - 3 + wingY, bird.x + 10, bird.y + wingY);
+                    ctx.fill();
+                });
+            },
+            
+            drawBuilding(x, building, alpha) {
+                const baseY = canvas.height - 20;
+                const y = baseY - building.height;
+                
+                // Edificio
+                ctx.fillStyle = building.color;
+                ctx.globalAlpha = alpha;
+                ctx.fillRect(x, y, building.width, building.height);
+                
+                // Ventanas
+                const windowWidth = 6;
+                const windowHeight = 8;
+                const windowSpacingX = building.width / (building.windows + 1);
+                const windowSpacingY = building.height / (building.windowRows + 1);
+                
+                for (let row = 1; row <= building.windowRows; row++) {
+                    for (let col = 1; col <= building.windows; col++) {
+                        const wx = x + col * windowSpacingX - windowWidth / 2;
+                        const wy = y + row * windowSpacingY - windowHeight / 2;
+                        
+                        // Luz aleatoria en ventanas
+                        if (Math.random() > 0.3) {
+                            ctx.fillStyle = '#fef08a';
+                        } else {
+                            ctx.fillStyle = '#1e293b';
+                        }
+                        ctx.fillRect(wx, wy, windowWidth, windowHeight);
+                    }
+                }
+                
+                ctx.globalAlpha = 1;
             }
         };
 
@@ -546,7 +875,9 @@
                 
                 if (newLevel > level) {
                     level = newLevel;
+                    // Aumentar velocidad y gravedad progresivamente
                     CONFIG.pipeSpeed = CONFIG.baseSpeed + (level - 1) * CONFIG.speedIncrement;
+                    CONFIG.gravity = CONFIG.baseGravity + (level - 1) * CONFIG.gravityIncrement;
                     Audio.playLevelUp();
                     this.showNotification();
                     this.updateDisplay();
@@ -572,23 +903,53 @@
         // ===== RENDERIZADO =====
         const Renderer = {
             drawBackground() {
-                const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-                gradient.addColorStop(0, '#e0f2fe');
-                gradient.addColorStop(0.5, '#bae6fd');
-                gradient.addColorStop(1, '#7dd3fc');
-                ctx.fillStyle = gradient;
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                // Dibujar paisaje urbano
+                Cityscape.draw();
                 
-                // Azulejos
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                // Marco de ventana
+                this.drawWindowFrame();
+                
+                // Suelo interior (baldosas)
+                this.drawFloor();
+            },
+            
+            drawWindowFrame() {
+                const frameWidth = 15;
+                const windowY = 0;
+                const windowHeight = canvas.height - 80;
+                
+                // Marco de ventana
+                ctx.fillStyle = '#78350f';
+                ctx.fillRect(0, windowY, frameWidth, windowHeight);
+                ctx.fillRect(canvas.width - frameWidth, windowY, frameWidth, windowHeight);
+                ctx.fillRect(0, windowY, canvas.width, frameWidth);
+                ctx.fillRect(0, windowHeight - frameWidth, canvas.width, frameWidth);
+                
+                // Cruz de la ventana
+                ctx.fillRect(canvas.width / 2 - 4, windowY, 8, windowHeight);
+                ctx.fillRect(0, windowHeight / 2 - 4, canvas.width, 8);
+                
+                // Borde interior
+                ctx.strokeStyle = '#92400e';
+                ctx.lineWidth = 3;
+                ctx.strokeRect(frameWidth, frameWidth, canvas.width - frameWidth * 2, windowHeight - frameWidth * 2);
+                
+                // Pared interior debajo de la ventana
+                ctx.fillStyle = '#e0f2fe';
+                ctx.fillRect(0, windowHeight, canvas.width, canvas.height - windowHeight);
+                
+                // Azulejos en la pared
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
                 ctx.lineWidth = 1;
-                const tileSize = 40;
+                const tileSize = 30;
                 for (let x = 0; x < canvas.width; x += tileSize) {
-                    for (let y = 0; y < canvas.height; y += tileSize) {
+                    for (let y = windowHeight; y < canvas.height; y += tileSize) {
                         ctx.strokeRect(x, y, tileSize, tileSize);
                     }
                 }
-                
+            },
+            
+            drawFloor() {
                 // Suelo
                 ctx.fillStyle = '#1e293b';
                 ctx.fillRect(0, canvas.height - 20, canvas.width, 20);
@@ -1057,6 +1418,7 @@
                 canvas.addEventListener('click', (e) => this.handleInput(e));
                 canvas.addEventListener('touchstart', (e) => this.handleInput(e), { passive: false });
                 
+                Cityscape.init();
                 this.reset();
                 gameState = 'ready';
                 this.loop();
@@ -1106,6 +1468,7 @@
                 
                 CONFIG.pipeSpeed = CONFIG.initialSpeed;
                 CONFIG.baseSpeed = CONFIG.initialSpeed;
+                CONFIG.gravity = CONFIG.baseGravity;
                 
                 doorAnimation = { active: false, progress: 0, doorOpen: 0, playerEntered: false };
                 
@@ -1151,6 +1514,9 @@
             update() {
                 animationTime += 0.1;
                 
+                // Actualizar paisaje urbano
+                Cityscape.update();
+                
                 // Actualizar nubes de pedo
                 player.fartClouds.forEach(cloud => {
                     cloud.opacity -= 0.02;
@@ -1176,7 +1542,7 @@
                 
                 if (gameState !== 'playing' || player.isDead) return;
                 
-                // Física del jugador
+                // Física del jugador con gravedad progresiva
                 player.velocity += CONFIG.gravity;
                 player.y += player.velocity;
                 player.rotation = Math.min(Math.max(player.velocity * 3, -30), 90);
@@ -1349,6 +1715,21 @@
         // ===== INICIALIZACIÓN =====
         document.addEventListener('DOMContentLoaded', () => {
             ImageCropper.init();
+            
+            // Selector de sonido de pedo
+            const fartButtons = document.querySelectorAll('.fart-btn');
+            fartButtons.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    fartButtons.forEach(b => b.classList.remove('selected'));
+                    btn.classList.add('selected');
+                    selectedFart = btn.dataset.fart;
+                });
+            });
+            
+            // Botón para probar sonido
+            document.getElementById('testFartBtn').addEventListener('click', () => {
+                Audio.playFart(selectedFart);
+            });
             
             document.getElementById('startBtn').addEventListener('click', () => Game.init());
             
