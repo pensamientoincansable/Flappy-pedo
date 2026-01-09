@@ -145,7 +145,7 @@
         <!-- Selector de sonido de pedo -->
         <div class="glass-card rounded-2xl p-4 mb-4">
             <h3 class="text-xl text-white mb-3 font-semibold">💨 Elige tu flatulencia</h3>
-            <div class="grid grid-cols-4 gap-2" id="fartSelector">
+            <div class="grid grid-cols-3 gap-2 mb-2" id="fartSelector">
                 <button class="fart-btn selected bg-gradient-to-br from-amber-600 to-amber-800 text-white p-3 rounded-xl text-center" data-fart="classic">
                     <div class="text-2xl">💨</div>
                     <div class="text-xs mt-1">Clásico</div>
@@ -162,6 +162,14 @@
                     <div class="text-2xl">🎺</div>
                     <div class="text-xs mt-1">Chillón</div>
                 </button>
+                <button class="fart-btn bg-gradient-to-br from-yellow-600 to-yellow-800 text-white p-3 rounded-xl text-center" data-fart="bubbly">
+                    <div class="text-2xl">🫧</div>
+                    <div class="text-xs mt-1">Burbujeante</div>
+                </button>
+                <button class="fart-btn bg-gradient-to-br from-pink-600 to-pink-800 text-white p-3 rounded-xl text-center" data-fart="long">
+                    <div class="text-2xl">🌬️</div>
+                    <div class="text-xs mt-1">Prolongado</div>
+                </button>
             </div>
             <button id="testFartBtn" class="mt-3 bg-gray-700 hover:bg-gray-600 px-4 py-1 rounded-lg text-white text-sm transition-all">
                 🔊 Probar sonido
@@ -173,7 +181,7 @@
         </button>
         
         <div class="mt-4 text-gray-500 text-xs">
-            <p>Toca la pantalla o presiona ESPACIO para... expulsar gases 💨</p>
+            <p>🕹️ Usa el joystick para apuntar y dispara pedos en cualquier dirección</p>
             <p class="mt-1 text-purple-400">🏆 10 niveles | 15 retretes por nivel | ¡Supera el récord!</p>
         </div>
     </div>
@@ -262,23 +270,31 @@
         // ===== CONFIGURACIÓN DEL JUEGO =====
         const CONFIG = {
             // Gravedad muy reducida y progresiva
-            baseGravity: 0.18,
-            gravity: 0.18,
-            gravityIncrement: 0.015,
+            baseGravity: 0.12,
+            gravity: 0.12,
+            gravityIncrement: 0.008,
             
-            jumpForce: -5.5,
-            pipeGap: 180,
-            pipeWidth: 80,
+            // Fuerza de impulso base
+            baseImpulse: 8,
+            impulseForce: 8,
+            
+            // Espacio MUCHO más grande entre obstáculos
+            pipeGap: 220,
+            pipeWidth: 70,
             
             // Velocidad inicial muy lenta
-            initialSpeed: 1.2,
-            baseSpeed: 1.2,
-            pipeSpeed: 1.2,
-            speedIncrement: 0.2,
+            initialSpeed: 1.0,
+            baseSpeed: 1.0,
+            pipeSpeed: 1.0,
+            speedIncrement: 0.15,
             
-            spawnInterval: 2500,
+            spawnInterval: 2800,
             pipesPerLevel: 15,
-            maxLevel: 10
+            maxLevel: 10,
+            
+            // Joystick
+            joystickRadius: 60,
+            joystickKnobRadius: 25
         };
 
         // ===== VARIABLES GLOBALES =====
@@ -293,16 +309,29 @@
         let animationId = null;
         let selectedFart = 'classic';
 
-        // Estado del jugador
+        // Estado del jugador - más pequeño
         const player = {
             x: -80,
             y: 250,
-            width: 90,
-            height: 110,
-            velocity: 0,
+            width: 70,
+            height: 85,
+            velocityX: 0,
+            velocityY: 0,
             rotation: 0,
             isDead: false,
             fartClouds: []
+        };
+
+        // Joystick virtual
+        const joystick = {
+            active: false,
+            baseX: 0,
+            baseY: 0,
+            knobX: 0,
+            knobY: 0,
+            angle: 0,
+            power: 0,
+            visible: false
         };
 
         // Fondo urbano animado
@@ -311,8 +340,14 @@
             clouds: [],
             birds: [],
             scrollX: 0,
-            initialized: false
+            initialized: false,
+            windowStates: [] // Estados de ventanas para parpadeo lento
         };
+        
+        // Control de toque para distinguir tap vs drag
+        let touchStartTime = 0;
+        let touchStartPos = { x: 0, y: 0 };
+        let isTap = false;
 
         // Obstáculos y efectos
         let pipes = [];
@@ -353,6 +388,12 @@
                     case 'squeaky':
                         this.playSqueakyFart();
                         break;
+                    case 'bubbly':
+                        this.playBubblyFart();
+                        break;
+                    case 'long':
+                        this.playLongFart();
+                        break;
                 }
             },
             
@@ -379,8 +420,6 @@
             
             playWetFart() {
                 const duration = 0.25;
-                
-                // Oscilador principal
                 const osc = audioContext.createOscillator();
                 const gain = audioContext.createGain();
                 const filter = audioContext.createBiquadFilter();
@@ -396,7 +435,6 @@
                 gain.gain.setValueAtTime(0.25, audioContext.currentTime);
                 gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
                 
-                // Ruido para efecto húmedo
                 const bufferSize = audioContext.sampleRate * duration;
                 const noiseBuffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
                 const output = noiseBuffer.getChannelData(0);
@@ -424,7 +462,6 @@
             
             playThunderFart() {
                 const duration = 0.3;
-                
                 const osc = audioContext.createOscillator();
                 const gain = audioContext.createGain();
                 const filter = audioContext.createBiquadFilter();
@@ -439,7 +476,6 @@
                 gain.gain.setValueAtTime(0.4, audioContext.currentTime);
                 gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
                 
-                // Sub-bass
                 const sub = audioContext.createOscillator();
                 const subGain = audioContext.createGain();
                 sub.type = 'sine';
@@ -458,7 +494,6 @@
             
             playSqueakyFart() {
                 const duration = 0.12;
-                
                 const osc = audioContext.createOscillator();
                 const gain = audioContext.createGain();
                 
@@ -469,7 +504,6 @@
                 gain.gain.setValueAtTime(0.2, audioContext.currentTime);
                 gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
                 
-                // Vibrato
                 const vibrato = audioContext.createOscillator();
                 const vibratoGain = audioContext.createGain();
                 vibrato.frequency.value = 30;
@@ -482,6 +516,86 @@
                 vibrato.start();
                 osc.stop(audioContext.currentTime + duration);
                 vibrato.stop(audioContext.currentTime + duration);
+            },
+            
+            // Nuevo: Pedo burbujeante realista
+            playBubblyFart() {
+                const duration = 0.4;
+                const bubbles = 6 + Math.floor(Math.random() * 4);
+                
+                for (let i = 0; i < bubbles; i++) {
+                    const delay = i * (duration / bubbles) * (0.8 + Math.random() * 0.4);
+                    setTimeout(() => {
+                        const osc = audioContext.createOscillator();
+                        const gain = audioContext.createGain();
+                        const filter = audioContext.createBiquadFilter();
+                        
+                        const baseFreq = 60 + Math.random() * 40;
+                        osc.type = 'sawtooth';
+                        osc.frequency.setValueAtTime(baseFreq, audioContext.currentTime);
+                        osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.7, audioContext.currentTime + 0.08);
+                        
+                        filter.type = 'lowpass';
+                        filter.frequency.value = 150 + Math.random() * 100;
+                        filter.Q.value = 2;
+                        
+                        gain.gain.setValueAtTime(0.15 + Math.random() * 0.1, audioContext.currentTime);
+                        gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.08);
+                        
+                        osc.connect(filter).connect(gain).connect(audioContext.destination);
+                        osc.start();
+                        osc.stop(audioContext.currentTime + 0.08);
+                    }, delay * 1000);
+                }
+            },
+            
+            // Nuevo: Pedo prolongado realista
+            playLongFart() {
+                const duration = 0.5 + Math.random() * 0.2;
+                const osc = audioContext.createOscillator();
+                const osc2 = audioContext.createOscillator();
+                const gain = audioContext.createGain();
+                const filter = audioContext.createBiquadFilter();
+                
+                // Oscilador principal
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(70, audioContext.currentTime);
+                osc.frequency.linearRampToValueAtTime(50, audioContext.currentTime + duration * 0.3);
+                osc.frequency.linearRampToValueAtTime(65, audioContext.currentTime + duration * 0.6);
+                osc.frequency.exponentialRampToValueAtTime(35, audioContext.currentTime + duration);
+                
+                // Segundo oscilador para textura
+                osc2.type = 'triangle';
+                osc2.frequency.setValueAtTime(75, audioContext.currentTime);
+                osc2.frequency.exponentialRampToValueAtTime(40, audioContext.currentTime + duration);
+                
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(200, audioContext.currentTime);
+                filter.frequency.linearRampToValueAtTime(100, audioContext.currentTime + duration);
+                filter.Q.value = 3;
+                
+                // Envolvente con variaciones
+                gain.gain.setValueAtTime(0.25, audioContext.currentTime);
+                gain.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + duration * 0.2);
+                gain.gain.linearRampToValueAtTime(0.2, audioContext.currentTime + duration * 0.5);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
+                
+                // Vibrato para hacerlo más realista
+                const lfo = audioContext.createOscillator();
+                const lfoGain = audioContext.createGain();
+                lfo.frequency.value = 8 + Math.random() * 4;
+                lfoGain.gain.value = 10;
+                lfo.connect(lfoGain).connect(osc.frequency);
+                
+                osc.connect(filter).connect(gain).connect(audioContext.destination);
+                osc2.connect(filter);
+                
+                osc.start();
+                osc2.start();
+                lfo.start();
+                osc.stop(audioContext.currentTime + duration);
+                osc2.stop(audioContext.currentTime + duration);
+                lfo.stop(audioContext.currentTime + duration);
             },
             
             playLevelUp() {
@@ -535,7 +649,6 @@
             init() {
                 if (cityscape.initialized) return;
                 
-                // Crear edificios de fondo
                 for (let i = 0; i < 15; i++) {
                     cityscape.buildings.push({
                         x: i * 80 - 100,
@@ -548,7 +661,6 @@
                     });
                 }
                 
-                // Crear nubes
                 for (let i = 0; i < 6; i++) {
                     cityscape.clouds.push({
                         x: Math.random() * 500,
@@ -558,7 +670,6 @@
                     });
                 }
                 
-                // Crear pájaros
                 for (let i = 0; i < 4; i++) {
                     cityscape.birds.push({
                         x: Math.random() * 400,
@@ -577,13 +688,11 @@
             },
             
             update() {
-                // Mover nubes
                 cityscape.clouds.forEach(cloud => {
                     cloud.x -= cloud.speed * 0.5;
                     if (cloud.x < -50) cloud.x = canvas.width + 50;
                 });
                 
-                // Mover pájaros
                 cityscape.birds.forEach(bird => {
                     bird.x -= bird.speed;
                     bird.wingPhase += 0.3;
@@ -593,14 +702,12 @@
                     }
                 });
                 
-                // Scroll de edificios
                 if (gameState === 'playing') {
                     cityscape.scrollX += CONFIG.pipeSpeed * 0.3;
                 }
             },
             
             draw() {
-                // Cielo con degradado
                 const skyGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
                 skyGradient.addColorStop(0, '#fef3c7');
                 skyGradient.addColorStop(0.3, '#fde68a');
@@ -609,7 +716,6 @@
                 ctx.fillStyle = skyGradient;
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
                 
-                // Sol
                 ctx.fillStyle = '#fef08a';
                 ctx.beginPath();
                 ctx.arc(canvas.width - 60, 50, 35, 0, Math.PI * 2);
@@ -619,7 +725,6 @@
                 ctx.arc(canvas.width - 60, 50, 25, 0, Math.PI * 2);
                 ctx.fill();
                 
-                // Nubes
                 cityscape.clouds.forEach(cloud => {
                     ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
                     ctx.beginPath();
@@ -629,19 +734,16 @@
                     ctx.fill();
                 });
                 
-                // Edificios de fondo (lejanos)
                 cityscape.buildings.filter(b => b.layer === 'back').forEach(building => {
                     const x = ((building.x - cityscape.scrollX * 0.3) % (canvas.width + 200)) - 100;
                     this.drawBuilding(x, building, 0.6);
                 });
                 
-                // Edificios de frente (cercanos)
                 cityscape.buildings.filter(b => b.layer === 'front').forEach(building => {
                     const x = ((building.x - cityscape.scrollX * 0.5) % (canvas.width + 200)) - 100;
                     this.drawBuilding(x, building, 1);
                 });
                 
-                // Pájaros
                 cityscape.birds.forEach(bird => {
                     ctx.fillStyle = '#1e293b';
                     ctx.beginPath();
@@ -657,12 +759,10 @@
                 const baseY = canvas.height - 20;
                 const y = baseY - building.height;
                 
-                // Edificio
                 ctx.fillStyle = building.color;
                 ctx.globalAlpha = alpha;
                 ctx.fillRect(x, y, building.width, building.height);
                 
-                // Ventanas
                 const windowWidth = 6;
                 const windowHeight = 8;
                 const windowSpacingX = building.width / (building.windows + 1);
@@ -673,7 +773,6 @@
                         const wx = x + col * windowSpacingX - windowWidth / 2;
                         const wy = y + row * windowSpacingY - windowHeight / 2;
                         
-                        // Luz aleatoria en ventanas
                         if (Math.random() > 0.3) {
                             ctx.fillStyle = '#fef08a';
                         } else {
@@ -875,7 +974,6 @@
                 
                 if (newLevel > level) {
                     level = newLevel;
-                    // Aumentar velocidad y gravedad progresivamente
                     CONFIG.pipeSpeed = CONFIG.baseSpeed + (level - 1) * CONFIG.speedIncrement;
                     CONFIG.gravity = CONFIG.baseGravity + (level - 1) * CONFIG.gravityIncrement;
                     Audio.playLevelUp();
@@ -900,48 +998,202 @@
             }
         };
 
+        // ===== JOYSTICK =====
+        const Joystick = {
+            getCanvasCoords(e) {
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+                
+                let clientX, clientY;
+                if (e.touches) {
+                    clientX = e.touches[0].clientX;
+                    clientY = e.touches[0].clientY;
+                } else {
+                    clientX = e.clientX;
+                    clientY = e.clientY;
+                }
+                
+                return {
+                    x: (clientX - rect.left) * scaleX,
+                    y: (clientY - rect.top) * scaleY
+                };
+            },
+            
+            start(e) {
+                if (gameState !== 'playing' || player.isDead) return;
+                
+                const coords = this.getCanvasCoords(e);
+                joystick.active = true;
+                joystick.visible = true;
+                joystick.baseX = coords.x;
+                joystick.baseY = coords.y;
+                joystick.knobX = coords.x;
+                joystick.knobY = coords.y;
+                joystick.power = 0;
+            },
+            
+            move(e) {
+                if (!joystick.active) return;
+                e.preventDefault();
+                
+                const coords = this.getCanvasCoords(e);
+                
+                const dx = coords.x - joystick.baseX;
+                const dy = coords.y - joystick.baseY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                const maxDistance = CONFIG.joystickRadius;
+                
+                if (distance <= maxDistance) {
+                    joystick.knobX = coords.x;
+                    joystick.knobY = coords.y;
+                } else {
+                    const angle = Math.atan2(dy, dx);
+                    joystick.knobX = joystick.baseX + Math.cos(angle) * maxDistance;
+                    joystick.knobY = joystick.baseY + Math.sin(angle) * maxDistance;
+                }
+                
+                joystick.power = Math.min(distance / maxDistance, 1);
+                joystick.angle = Math.atan2(joystick.knobY - joystick.baseY, joystick.knobX - joystick.baseX);
+            },
+            
+            end() {
+                if (!joystick.active) return;
+                
+                if (joystick.power > 0.2) {
+                    // Impulsar en dirección OPUESTA al joystick
+                    const impulseX = -Math.cos(joystick.angle) * CONFIG.impulseForce * joystick.power;
+                    const impulseY = -Math.sin(joystick.angle) * CONFIG.impulseForce * joystick.power;
+                    
+                    player.velocityX += impulseX * 0.5;
+                    player.velocityY += impulseY;
+                    
+                    // Limitar velocidades
+                    player.velocityX = Math.max(-5, Math.min(5, player.velocityX));
+                    player.velocityY = Math.max(-12, Math.min(12, player.velocityY));
+                    
+                    Audio.playFart();
+                    
+                    // Crear nube de pedo en la dirección del joystick
+                    const fartAngle = joystick.angle;
+                    player.fartClouds.push({
+                        x: player.x + player.width / 2 + Math.cos(fartAngle) * 30,
+                        y: player.y + player.height / 2 + Math.sin(fartAngle) * 30,
+                        angle: fartAngle,
+                        size: 15 + joystick.power * 15,
+                        opacity: 1,
+                        particles: Array.from({length: 8}, () => ({
+                            x: 0,
+                            y: 0,
+                            size: 5 + Math.random() * 10,
+                            speed: 2 + Math.random() * 3,
+                            angle: fartAngle + (Math.random() - 0.5) * 0.5
+                        }))
+                    });
+                }
+                
+                joystick.active = false;
+                joystick.visible = false;
+                joystick.power = 0;
+            },
+            
+            draw() {
+                if (!joystick.visible) return;
+                
+                // Base del joystick
+                ctx.beginPath();
+                ctx.arc(joystick.baseX, joystick.baseY, CONFIG.joystickRadius, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                
+                // Línea de dirección
+                if (joystick.power > 0.1) {
+                    ctx.beginPath();
+                    ctx.moveTo(joystick.baseX, joystick.baseY);
+                    ctx.lineTo(joystick.knobX, joystick.knobY);
+                    ctx.strokeStyle = `rgba(139, 92, 246, ${0.5 + joystick.power * 0.5})`;
+                    ctx.lineWidth = 4;
+                    ctx.stroke();
+                    
+                    // Flecha indicando dirección de impulso (opuesta)
+                    const arrowAngle = joystick.angle + Math.PI;
+                    const arrowLength = 30 + joystick.power * 20;
+                    const arrowX = joystick.baseX + Math.cos(arrowAngle) * arrowLength;
+                    const arrowY = joystick.baseY + Math.sin(arrowAngle) * arrowLength;
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(joystick.baseX, joystick.baseY);
+                    ctx.lineTo(arrowX, arrowY);
+                    ctx.strokeStyle = `rgba(34, 197, 94, ${0.5 + joystick.power * 0.5})`;
+                    ctx.lineWidth = 3;
+                    ctx.stroke();
+                    
+                    // Punta de flecha
+                    const headLength = 10;
+                    ctx.beginPath();
+                    ctx.moveTo(arrowX, arrowY);
+                    ctx.lineTo(arrowX - Math.cos(arrowAngle - 0.4) * headLength, arrowY - Math.sin(arrowAngle - 0.4) * headLength);
+                    ctx.moveTo(arrowX, arrowY);
+                    ctx.lineTo(arrowX - Math.cos(arrowAngle + 0.4) * headLength, arrowY - Math.sin(arrowAngle + 0.4) * headLength);
+                    ctx.stroke();
+                }
+                
+                // Knob del joystick
+                ctx.beginPath();
+                ctx.arc(joystick.knobX, joystick.knobY, CONFIG.joystickKnobRadius, 0, Math.PI * 2);
+                const gradient = ctx.createRadialGradient(joystick.knobX, joystick.knobY, 0, joystick.knobX, joystick.knobY, CONFIG.joystickKnobRadius);
+                gradient.addColorStop(0, `rgba(139, 92, 246, ${0.8 + joystick.power * 0.2})`);
+                gradient.addColorStop(1, `rgba(99, 102, 241, ${0.6 + joystick.power * 0.4})`);
+                ctx.fillStyle = gradient;
+                ctx.fill();
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                // Indicador de potencia
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 14px Outfit';
+                ctx.textAlign = 'center';
+                ctx.fillText(`${Math.round(joystick.power * 100)}%`, joystick.baseX, joystick.baseY - CONFIG.joystickRadius - 10);
+            }
+        };
+
         // ===== RENDERIZADO =====
         const Renderer = {
             drawBackground() {
-                // Dibujar paisaje urbano
                 Cityscape.draw();
-                
-                // Marco de ventana
                 this.drawWindowFrame();
-                
-                // Suelo interior (baldosas)
                 this.drawFloor();
             },
             
             drawWindowFrame() {
-                const frameWidth = 15;
+                const frameWidth = 12;
                 const windowY = 0;
-                const windowHeight = canvas.height - 80;
+                const windowHeight = canvas.height - 60;
                 
-                // Marco de ventana
                 ctx.fillStyle = '#78350f';
                 ctx.fillRect(0, windowY, frameWidth, windowHeight);
                 ctx.fillRect(canvas.width - frameWidth, windowY, frameWidth, windowHeight);
                 ctx.fillRect(0, windowY, canvas.width, frameWidth);
                 ctx.fillRect(0, windowHeight - frameWidth, canvas.width, frameWidth);
                 
-                // Cruz de la ventana
-                ctx.fillRect(canvas.width / 2 - 4, windowY, 8, windowHeight);
-                ctx.fillRect(0, windowHeight / 2 - 4, canvas.width, 8);
+                ctx.fillRect(canvas.width / 2 - 3, windowY, 6, windowHeight);
+                ctx.fillRect(0, windowHeight / 2 - 3, canvas.width, 6);
                 
-                // Borde interior
                 ctx.strokeStyle = '#92400e';
-                ctx.lineWidth = 3;
+                ctx.lineWidth = 2;
                 ctx.strokeRect(frameWidth, frameWidth, canvas.width - frameWidth * 2, windowHeight - frameWidth * 2);
                 
-                // Pared interior debajo de la ventana
                 ctx.fillStyle = '#e0f2fe';
                 ctx.fillRect(0, windowHeight, canvas.width, canvas.height - windowHeight);
                 
-                // Azulejos en la pared
                 ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
                 ctx.lineWidth = 1;
-                const tileSize = 30;
+                const tileSize = 25;
                 for (let x = 0; x < canvas.width; x += tileSize) {
                     for (let y = windowHeight; y < canvas.height; y += tileSize) {
                         ctx.strokeRect(x, y, tileSize, tileSize);
@@ -950,51 +1202,45 @@
             },
             
             drawFloor() {
-                // Suelo
                 ctx.fillStyle = '#1e293b';
-                ctx.fillRect(0, canvas.height - 20, canvas.width, 20);
+                ctx.fillRect(0, canvas.height - 15, canvas.width, 15);
                 ctx.fillStyle = '#334155';
-                ctx.fillRect(0, canvas.height - 25, canvas.width, 5);
+                ctx.fillRect(0, canvas.height - 18, canvas.width, 3);
             },
             
             drawDoor() {
-                const doorX = 20;
-                const doorY = canvas.height - 220;
-                const doorWidth = 80;
-                const doorHeight = 180;
+                const doorX = 15;
+                const doorY = canvas.height - 180;
+                const doorWidth = 65;
+                const doorHeight = 150;
                 
-                // Marco de la puerta
                 ctx.fillStyle = '#78350f';
-                ctx.fillRect(doorX - 8, doorY - 8, doorWidth + 16, doorHeight + 8);
+                ctx.fillRect(doorX - 6, doorY - 6, doorWidth + 12, doorHeight + 6);
                 
-                // Puerta
                 const openAmount = doorAnimation.doorOpen * doorWidth * 0.8;
                 
                 ctx.fillStyle = '#a16207';
                 ctx.fillRect(doorX + openAmount, doorY, doorWidth - openAmount, doorHeight);
                 
-                // Interior oscuro
                 if (openAmount > 5) {
                     ctx.fillStyle = '#1c1917';
                     ctx.fillRect(doorX, doorY, Math.min(openAmount, doorWidth - 10), doorHeight);
                 }
                 
-                // Manija
-                if (doorWidth - openAmount > 15) {
+                if (doorWidth - openAmount > 12) {
                     ctx.fillStyle = '#fbbf24';
                     ctx.beginPath();
-                    ctx.arc(doorX + openAmount + doorWidth - openAmount - 15, doorY + doorHeight / 2, 6, 0, Math.PI * 2);
+                    ctx.arc(doorX + openAmount + doorWidth - openAmount - 12, doorY + doorHeight / 2, 5, 0, Math.PI * 2);
                     ctx.fill();
                 }
                 
-                // Cartel WC
                 ctx.fillStyle = '#f8fafc';
-                ctx.fillRect(doorX + openAmount + 15, doorY + 20, 50 - openAmount * 0.5, 30);
+                ctx.fillRect(doorX + openAmount + 12, doorY + 15, 40 - openAmount * 0.5, 25);
                 ctx.fillStyle = '#1e293b';
-                ctx.font = 'bold 16px Outfit';
+                ctx.font = 'bold 14px Outfit';
                 ctx.textAlign = 'center';
-                if (doorWidth - openAmount > 40) {
-                    ctx.fillText('WC', doorX + openAmount + 40, doorY + 42);
+                if (doorWidth - openAmount > 35) {
+                    ctx.fillText('WC', doorX + openAmount + 32, doorY + 33);
                 }
                 ctx.textAlign = 'left';
             },
@@ -1004,52 +1250,56 @@
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
                 
                 ctx.fillStyle = '#ffffff';
-                ctx.font = 'bold 28px Outfit';
+                ctx.font = 'bold 24px Outfit';
                 ctx.textAlign = 'center';
-                ctx.fillText('👆 TOCA PARA EMPEZAR 👆', canvas.width / 2, canvas.height / 2 - 20);
+                ctx.fillText('👆 TOCA PARA EMPEZAR 👆', canvas.width / 2, canvas.height / 2 - 30);
                 
-                ctx.font = '18px Outfit';
+                ctx.font = '16px Outfit';
                 ctx.fillStyle = '#fbbf24';
-                ctx.fillText('El personaje saldrá del baño...', canvas.width / 2, canvas.height / 2 + 20);
+                ctx.fillText('Arrastra para apuntar y suelta', canvas.width / 2, canvas.height / 2 + 5);
+                ctx.fillText('para tirarte un pedo direccional 💨', canvas.width / 2, canvas.height / 2 + 25);
                 ctx.textAlign = 'left';
             },
             
             drawPlayer() {
                 ctx.save();
                 ctx.translate(player.x + player.width / 2, player.y + player.height / 2);
-                ctx.rotate(player.rotation * Math.PI / 180);
+                
+                // Rotar según la dirección del movimiento
+                const moveAngle = Math.atan2(player.velocityY, player.velocityX + 0.5);
+                ctx.rotate(moveAngle * 0.3);
                 
                 const offsetX = -player.width / 2;
                 const offsetY = -player.height / 2;
                 
                 // Piernas
                 ctx.strokeStyle = '#fcd34d';
-                ctx.lineWidth = 8;
+                ctx.lineWidth = 6;
                 ctx.lineCap = 'round';
                 
                 ctx.beginPath();
-                ctx.moveTo(offsetX + 30, offsetY + 75);
-                ctx.quadraticCurveTo(offsetX + 15, offsetY + 90, offsetX + 20, offsetY + 105);
+                ctx.moveTo(offsetX + 22, offsetY + 58);
+                ctx.quadraticCurveTo(offsetX + 10, offsetY + 70, offsetX + 14, offsetY + 80);
                 ctx.stroke();
                 
                 ctx.beginPath();
-                ctx.moveTo(offsetX + 60, offsetY + 75);
-                ctx.quadraticCurveTo(offsetX + 75, offsetY + 90, offsetX + 70, offsetY + 105);
+                ctx.moveTo(offsetX + 48, offsetY + 58);
+                ctx.quadraticCurveTo(offsetX + 60, offsetY + 70, offsetX + 56, offsetY + 80);
                 ctx.stroke();
                 
                 // Pies
                 ctx.fillStyle = '#92400e';
                 ctx.beginPath();
-                ctx.ellipse(offsetX + 18, offsetY + 108, 8, 5, -0.3, 0, Math.PI * 2);
+                ctx.ellipse(offsetX + 12, offsetY + 82, 6, 4, -0.3, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.beginPath();
-                ctx.ellipse(offsetX + 72, offsetY + 108, 8, 5, 0.3, 0, Math.PI * 2);
+                ctx.ellipse(offsetX + 58, offsetY + 82, 6, 4, 0.3, 0, Math.PI * 2);
                 ctx.fill();
                 
                 // Cuerpo
                 ctx.fillStyle = '#3b82f6';
                 ctx.beginPath();
-                ctx.ellipse(offsetX + 45, offsetY + 60, 22, 25, 0, 0, Math.PI * 2);
+                ctx.ellipse(offsetX + 35, offsetY + 45, 18, 20, 0, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.strokeStyle = '#2563eb';
                 ctx.lineWidth = 2;
@@ -1057,44 +1307,44 @@
                 
                 // Brazos
                 ctx.strokeStyle = '#fcd34d';
-                ctx.lineWidth = 7;
+                ctx.lineWidth = 5;
                 ctx.lineCap = 'round';
                 
                 ctx.beginPath();
-                ctx.moveTo(offsetX + 25, offsetY + 55);
-                ctx.quadraticCurveTo(offsetX + 15, offsetY + 60, offsetX + 25, offsetY + 70);
+                ctx.moveTo(offsetX + 18, offsetY + 42);
+                ctx.quadraticCurveTo(offsetX + 10, offsetY + 46, offsetX + 18, offsetY + 54);
                 ctx.stroke();
                 
                 ctx.beginPath();
-                ctx.moveTo(offsetX + 65, offsetY + 55);
-                ctx.quadraticCurveTo(offsetX + 75, offsetY + 60, offsetX + 65, offsetY + 70);
+                ctx.moveTo(offsetX + 52, offsetY + 42);
+                ctx.quadraticCurveTo(offsetX + 60, offsetY + 46, offsetX + 52, offsetY + 54);
                 ctx.stroke();
                 
                 // Revista
                 ctx.fillStyle = '#f8fafc';
-                ctx.fillRect(offsetX + 20, offsetY + 58, 50, 35);
+                ctx.fillRect(offsetX + 14, offsetY + 44, 42, 28);
                 ctx.strokeStyle = '#1e293b';
-                ctx.lineWidth = 2;
-                ctx.strokeRect(offsetX + 20, offsetY + 58, 50, 35);
+                ctx.lineWidth = 1.5;
+                ctx.strokeRect(offsetX + 14, offsetY + 44, 42, 28);
                 
                 ctx.fillStyle = '#1e293b';
-                ctx.font = 'bold 9px Outfit';
+                ctx.font = 'bold 7px Outfit';
                 ctx.textAlign = 'center';
-                ctx.fillText('ME', offsetX + 45, offsetY + 72);
-                ctx.fillText('CAGO', offsetX + 45, offsetY + 84);
+                ctx.fillText('ME', offsetX + 35, offsetY + 55);
+                ctx.fillText('CAGO', offsetX + 35, offsetY + 65);
                 ctx.textAlign = 'left';
                 
                 // Manos
                 ctx.fillStyle = '#fcd34d';
                 ctx.beginPath();
-                ctx.arc(offsetX + 22, offsetY + 72, 6, 0, Math.PI * 2);
-                ctx.arc(offsetX + 68, offsetY + 72, 6, 0, Math.PI * 2);
+                ctx.arc(offsetX + 16, offsetY + 56, 5, 0, Math.PI * 2);
+                ctx.arc(offsetX + 54, offsetY + 56, 5, 0, Math.PI * 2);
                 ctx.fill();
                 
                 // Rostro
-                const faceY = offsetY + 22;
-                const faceX = offsetX + 45;
-                const faceSize = 50;
+                const faceY = offsetY + 16;
+                const faceX = offsetX + 35;
+                const faceSize = 38;
                 
                 if (customFace) {
                     ctx.save();
@@ -1107,7 +1357,7 @@
                     ctx.beginPath();
                     ctx.arc(faceX, faceY, faceSize / 2, 0, Math.PI * 2);
                     ctx.strokeStyle = '#e2e8f0';
-                    ctx.lineWidth = 3;
+                    ctx.lineWidth = 2;
                     ctx.stroke();
                     
                     if (player.isDead) {
@@ -1116,20 +1366,19 @@
                         ctx.arc(faceX, faceY, faceSize / 2, 0, Math.PI * 2);
                         ctx.fill();
                         
-                        // Ojos X
                         ctx.strokeStyle = '#000';
-                        ctx.lineWidth = 4;
+                        ctx.lineWidth = 3;
                         ctx.beginPath();
-                        ctx.moveTo(faceX - 14, faceY - 10);
-                        ctx.lineTo(faceX - 4, faceY);
-                        ctx.moveTo(faceX - 4, faceY - 10);
-                        ctx.lineTo(faceX - 14, faceY);
+                        ctx.moveTo(faceX - 10, faceY - 6);
+                        ctx.lineTo(faceX - 3, faceY + 1);
+                        ctx.moveTo(faceX - 3, faceY - 6);
+                        ctx.lineTo(faceX - 10, faceY + 1);
                         ctx.stroke();
                         ctx.beginPath();
-                        ctx.moveTo(faceX + 4, faceY - 10);
-                        ctx.lineTo(faceX + 14, faceY);
-                        ctx.moveTo(faceX + 14, faceY - 10);
-                        ctx.lineTo(faceX + 4, faceY);
+                        ctx.moveTo(faceX + 3, faceY - 6);
+                        ctx.lineTo(faceX + 10, faceY + 1);
+                        ctx.moveTo(faceX + 10, faceY - 6);
+                        ctx.lineTo(faceX + 3, faceY + 1);
                         ctx.stroke();
                     }
                 } else {
@@ -1138,80 +1387,64 @@
                     ctx.fillStyle = '#fcd34d';
                     ctx.fill();
                     ctx.strokeStyle = '#f59e0b';
-                    ctx.lineWidth = 3;
+                    ctx.lineWidth = 2;
                     ctx.stroke();
                     
                     if (player.isDead) {
                         ctx.strokeStyle = '#dc2626';
-                        ctx.lineWidth = 4;
+                        ctx.lineWidth = 3;
                         ctx.beginPath();
-                        ctx.moveTo(faceX - 14, faceY - 10);
-                        ctx.lineTo(faceX - 4, faceY);
-                        ctx.moveTo(faceX - 4, faceY - 10);
-                        ctx.lineTo(faceX - 14, faceY);
+                        ctx.moveTo(faceX - 10, faceY - 6);
+                        ctx.lineTo(faceX - 3, faceY + 1);
+                        ctx.moveTo(faceX - 3, faceY - 6);
+                        ctx.lineTo(faceX - 10, faceY + 1);
                         ctx.stroke();
                         ctx.beginPath();
-                        ctx.moveTo(faceX + 4, faceY - 10);
-                        ctx.lineTo(faceX + 14, faceY);
-                        ctx.moveTo(faceX + 14, faceY - 10);
-                        ctx.lineTo(faceX + 4, faceY);
+                        ctx.moveTo(faceX + 3, faceY - 6);
+                        ctx.lineTo(faceX + 10, faceY + 1);
+                        ctx.moveTo(faceX + 10, faceY - 6);
+                        ctx.lineTo(faceX + 3, faceY + 1);
                         ctx.stroke();
                     } else {
-                        // Ojos
                         ctx.fillStyle = '#FFF';
                         ctx.beginPath();
-                        ctx.ellipse(faceX - 10, faceY - 5, 8, 10, 0, 0, Math.PI * 2);
-                        ctx.ellipse(faceX + 10, faceY - 5, 8, 10, 0, 0, Math.PI * 2);
+                        ctx.ellipse(faceX - 7, faceY - 3, 6, 7, 0, 0, Math.PI * 2);
+                        ctx.ellipse(faceX + 7, faceY - 3, 6, 7, 0, 0, Math.PI * 2);
                         ctx.fill();
                         ctx.strokeStyle = '#000';
-                        ctx.lineWidth = 2;
+                        ctx.lineWidth = 1.5;
                         ctx.stroke();
                         
                         ctx.fillStyle = '#000';
                         ctx.beginPath();
-                        ctx.arc(faceX - 10, faceY - 7, 4, 0, Math.PI * 2);
-                        ctx.arc(faceX + 10, faceY - 7, 4, 0, Math.PI * 2);
+                        ctx.arc(faceX - 7, faceY - 4, 3, 0, Math.PI * 2);
+                        ctx.arc(faceX + 7, faceY - 4, 3, 0, Math.PI * 2);
                         ctx.fill();
                         
-                        // Cejas y boca
                         ctx.strokeStyle = '#92400e';
-                        ctx.lineWidth = 3;
+                        ctx.lineWidth = 2;
                         ctx.beginPath();
-                        ctx.moveTo(faceX - 16, faceY - 14);
-                        ctx.lineTo(faceX - 4, faceY - 18);
-                        ctx.moveTo(faceX + 4, faceY - 18);
-                        ctx.lineTo(faceX + 16, faceY - 14);
+                        ctx.moveTo(faceX - 12, faceY - 10);
+                        ctx.lineTo(faceX - 3, faceY - 12);
+                        ctx.moveTo(faceX + 3, faceY - 12);
+                        ctx.lineTo(faceX + 12, faceY - 10);
                         ctx.stroke();
                         
                         ctx.beginPath();
-                        ctx.moveTo(faceX - 10, faceY + 12);
-                        ctx.quadraticCurveTo(faceX, faceY + 8, faceX + 10, faceY + 12);
+                        ctx.moveTo(faceX - 7, faceY + 8);
+                        ctx.quadraticCurveTo(faceX, faceY + 5, faceX + 7, faceY + 8);
                         ctx.stroke();
                         
-                        // Sudor
                         ctx.fillStyle = '#7dd3fc';
                         ctx.beginPath();
-                        ctx.ellipse(faceX - 22, faceY - 5, 3, 5, 0.3, 0, Math.PI * 2);
+                        ctx.ellipse(faceX - 16, faceY - 3, 2, 4, 0.3, 0, Math.PI * 2);
                         ctx.fill();
                         
-                        // Mejillas
                         ctx.fillStyle = 'rgba(248, 113, 113, 0.5)';
                         ctx.beginPath();
-                        ctx.arc(faceX - 18, faceY + 5, 6, 0, Math.PI * 2);
-                        ctx.arc(faceX + 18, faceY + 5, 6, 0, Math.PI * 2);
+                        ctx.arc(faceX - 13, faceY + 3, 4, 0, Math.PI * 2);
+                        ctx.arc(faceX + 13, faceY + 3, 4, 0, Math.PI * 2);
                         ctx.fill();
-                    }
-                }
-                
-                // Efecto de gas
-                if (!player.isDead && player.velocity < -2) {
-                    ctx.strokeStyle = 'rgba(100, 140, 80, 0.7)';
-                    ctx.lineWidth = 3;
-                    for (let i = 0; i < 4; i++) {
-                        ctx.beginPath();
-                        ctx.moveTo(offsetX + 35 + i * 5, offsetY + 100);
-                        ctx.quadraticCurveTo(offsetX + 30 + i * 3, offsetY + 110 + i * 3, offsetX + 25 - i * 5, offsetY + 115 + i * 5);
-                        ctx.stroke();
                     }
                 }
                 
@@ -1221,8 +1454,10 @@
             drawFartClouds() {
                 player.fartClouds.forEach(cloud => {
                     cloud.particles.forEach(p => {
+                        const px = cloud.x + p.x;
+                        const py = cloud.y + p.y;
                         ctx.beginPath();
-                        ctx.arc(cloud.x + p.x, cloud.y + p.y, p.size * (cloud.size / 20), 0, Math.PI * 2);
+                        ctx.arc(px, py, p.size * (cloud.size / 15), 0, Math.PI * 2);
                         const g = Math.floor(100 + Math.random() * 50);
                         ctx.fillStyle = `rgba(120, ${g}, 40, ${cloud.opacity * 0.6})`;
                         ctx.fill();
@@ -1248,42 +1483,42 @@
                 
                 ctx.fillStyle = '#f8fafc';
                 ctx.beginPath();
-                ctx.moveTo(pipe.x - 5, toiletY + 35);
-                ctx.lineTo(pipe.x + CONFIG.pipeWidth + 5, toiletY + 35);
+                ctx.moveTo(pipe.x - 4, toiletY + 30);
+                ctx.lineTo(pipe.x + CONFIG.pipeWidth + 4, toiletY + 30);
                 ctx.lineTo(pipe.x + CONFIG.pipeWidth, toiletY + toiletHeight);
                 ctx.lineTo(pipe.x, toiletY + toiletHeight);
                 ctx.closePath();
                 ctx.fill();
                 ctx.strokeStyle = '#cbd5e1';
-                ctx.lineWidth = 3;
+                ctx.lineWidth = 2;
                 ctx.stroke();
                 
                 ctx.fillStyle = '#f1f5f9';
                 ctx.beginPath();
-                ctx.ellipse(centerX, toiletY + 15, CONFIG.pipeWidth / 2 + 8, 20, 0, Math.PI, 0);
+                ctx.ellipse(centerX, toiletY + 12, CONFIG.pipeWidth / 2 + 6, 16, 0, Math.PI, 0);
                 ctx.fill();
                 
                 ctx.fillStyle = '#e2e8f0';
                 ctx.beginPath();
-                ctx.ellipse(centerX, toiletY + 20, CONFIG.pipeWidth / 2, 18, 0, 0, Math.PI * 2);
+                ctx.ellipse(centerX, toiletY + 16, CONFIG.pipeWidth / 2, 14, 0, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.strokeStyle = '#cbd5e1';
                 ctx.stroke();
                 
                 ctx.fillStyle = '#7dd3fc';
                 ctx.beginPath();
-                ctx.ellipse(centerX, toiletY + 22, CONFIG.pipeWidth / 3, 12, 0, 0, Math.PI * 2);
+                ctx.ellipse(centerX, toiletY + 18, CONFIG.pipeWidth / 3, 10, 0, 0, Math.PI * 2);
                 ctx.fill();
                 
                 ctx.fillStyle = '#10b981';
-                ctx.font = 'bold 12px Outfit';
+                ctx.font = 'bold 10px Outfit';
                 ctx.textAlign = 'center';
-                ctx.fillText('✓ CHECKPOINT', centerX, toiletY + 55);
+                ctx.fillText('✓ CHECK', centerX, toiletY + 45);
                 ctx.textAlign = 'left';
                 
                 ctx.fillStyle = '#fbbf24';
                 ctx.beginPath();
-                ctx.arc(centerX, toiletY - 10, 8 + Math.sin(animationTime * 3) * 2, 0, Math.PI * 2);
+                ctx.arc(centerX, toiletY - 8, 6 + Math.sin(animationTime * 3) * 2, 0, Math.PI * 2);
                 ctx.fill();
             },
             
@@ -1294,72 +1529,71 @@
                 
                 ctx.fillStyle = '#f8fafc';
                 ctx.beginPath();
-                ctx.moveTo(pipe.x - 5, toiletY + 35);
-                ctx.lineTo(pipe.x + CONFIG.pipeWidth + 5, toiletY + 35);
+                ctx.moveTo(pipe.x - 4, toiletY + 30);
+                ctx.lineTo(pipe.x + CONFIG.pipeWidth + 4, toiletY + 30);
                 ctx.lineTo(pipe.x + CONFIG.pipeWidth, toiletY + toiletHeight);
                 ctx.lineTo(pipe.x, toiletY + toiletHeight);
                 ctx.closePath();
                 ctx.fill();
                 ctx.strokeStyle = '#cbd5e1';
-                ctx.lineWidth = 3;
+                ctx.lineWidth = 2;
                 ctx.stroke();
                 
-                // Manchas
                 ctx.fillStyle = '#1c1917';
-                for (let i = 0; i < 5; i++) {
+                for (let i = 0; i < 4; i++) {
                     ctx.beginPath();
-                    ctx.ellipse(pipe.x + 10 + i * 15, toiletY + 40 + (i % 2) * 10, 8, 5, 0, 0, Math.PI * 2);
+                    ctx.ellipse(pipe.x + 8 + i * 15, toiletY + 35 + (i % 2) * 8, 6, 4, 0, 0, Math.PI * 2);
                     ctx.fill();
                 }
                 
                 ctx.fillStyle = '#f1f5f9';
                 ctx.beginPath();
-                ctx.ellipse(centerX, toiletY + 15, CONFIG.pipeWidth / 2 + 8, 20, 0, Math.PI, 0);
+                ctx.ellipse(centerX, toiletY + 12, CONFIG.pipeWidth / 2 + 6, 16, 0, Math.PI, 0);
                 ctx.fill();
                 
-                const seatGradient = ctx.createRadialGradient(centerX, toiletY + 20, 0, centerX, toiletY + 20, CONFIG.pipeWidth / 2);
+                const seatGradient = ctx.createRadialGradient(centerX, toiletY + 16, 0, centerX, toiletY + 16, CONFIG.pipeWidth / 2);
                 seatGradient.addColorStop(0, '#e2e8f0');
                 seatGradient.addColorStop(0.7, '#f8fafc');
                 seatGradient.addColorStop(1, '#4b5563');
                 ctx.fillStyle = seatGradient;
                 ctx.beginPath();
-                ctx.ellipse(centerX, toiletY + 20, CONFIG.pipeWidth / 2, 18, 0, 0, Math.PI * 2);
+                ctx.ellipse(centerX, toiletY + 16, CONFIG.pipeWidth / 2, 14, 0, 0, Math.PI * 2);
                 ctx.fill();
                 
-                const lavaGradient = ctx.createRadialGradient(centerX, toiletY + 22, 0, centerX, toiletY + 22, CONFIG.pipeWidth / 3);
+                const lavaGradient = ctx.createRadialGradient(centerX, toiletY + 18, 0, centerX, toiletY + 18, CONFIG.pipeWidth / 3);
                 lavaGradient.addColorStop(0, '#fef08a');
                 lavaGradient.addColorStop(0.5, '#f97316');
                 lavaGradient.addColorStop(1, '#dc2626');
                 ctx.fillStyle = lavaGradient;
                 ctx.beginPath();
-                ctx.ellipse(centerX, toiletY + 22, CONFIG.pipeWidth / 3, 12, 0, 0, Math.PI * 2);
+                ctx.ellipse(centerX, toiletY + 18, CONFIG.pipeWidth / 3, 10, 0, 0, Math.PI * 2);
                 ctx.fill();
                 
                 this.drawFire(pipe.x, toiletY, CONFIG.pipeWidth);
             },
             
             drawFire(x, y, width) {
-                for (let i = 0; i < 7; i++) {
-                    const flameX = x + (width / 8) * (i + 1);
-                    const flameOffset = Math.sin(animationTime * 4 + i * 1.5) * 5;
-                    const flameHeight = 25 + Math.sin(animationTime * 6 + i * 2) * 10;
+                for (let i = 0; i < 5; i++) {
+                    const flameX = x + (width / 6) * (i + 1);
+                    const flameOffset = Math.sin(animationTime * 4 + i * 1.5) * 4;
+                    const flameHeight = 20 + Math.sin(animationTime * 6 + i * 2) * 8;
                     
                     ctx.fillStyle = 'rgba(220, 38, 38, 0.8)';
                     ctx.beginPath();
-                    ctx.moveTo(flameX - 8, y + 15);
-                    ctx.quadraticCurveTo(flameX + flameOffset, y - flameHeight, flameX + 8, y + 15);
+                    ctx.moveTo(flameX - 6, y + 12);
+                    ctx.quadraticCurveTo(flameX + flameOffset, y - flameHeight, flameX + 6, y + 12);
                     ctx.fill();
                     
                     ctx.fillStyle = 'rgba(249, 115, 22, 0.85)';
                     ctx.beginPath();
-                    ctx.moveTo(flameX - 5, y + 15);
-                    ctx.quadraticCurveTo(flameX + flameOffset * 0.7, y - flameHeight * 0.7, flameX + 5, y + 15);
+                    ctx.moveTo(flameX - 4, y + 12);
+                    ctx.quadraticCurveTo(flameX + flameOffset * 0.7, y - flameHeight * 0.7, flameX + 4, y + 12);
                     ctx.fill();
                     
                     ctx.fillStyle = 'rgba(251, 191, 36, 0.9)';
                     ctx.beginPath();
-                    ctx.moveTo(flameX - 3, y + 15);
-                    ctx.quadraticCurveTo(flameX + flameOffset * 0.4, y - flameHeight * 0.5, flameX + 3, y + 15);
+                    ctx.moveTo(flameX - 2, y + 12);
+                    ctx.quadraticCurveTo(flameX + flameOffset * 0.4, y - flameHeight * 0.5, flameX + 2, y + 12);
                     ctx.fill();
                 }
             },
@@ -1372,21 +1606,21 @@
                 iceGradient.addColorStop(0.5, '#ecfeff');
                 iceGradient.addColorStop(1, '#a5f3fc');
                 ctx.fillStyle = iceGradient;
-                ctx.fillRect(pipe.x, 0, CONFIG.pipeWidth, iceEndY - 40);
+                ctx.fillRect(pipe.x, 0, CONFIG.pipeWidth, iceEndY - 30);
                 
                 ctx.strokeStyle = '#67e8f9';
-                ctx.lineWidth = 3;
-                ctx.strokeRect(pipe.x, 0, CONFIG.pipeWidth, iceEndY - 40);
+                ctx.lineWidth = 2;
+                ctx.strokeRect(pipe.x, 0, CONFIG.pipeWidth, iceEndY - 30);
                 
                 [0.15, 0.35, 0.5, 0.65, 0.85].forEach((pos, i) => {
                     const icicleX = pipe.x + CONFIG.pipeWidth * pos;
-                    const icicleHeight = 25 + (i % 2) * 20 + Math.sin(animationTime + i) * 3;
+                    const icicleHeight = 20 + (i % 2) * 15 + Math.sin(animationTime + i) * 2;
                     
                     ctx.fillStyle = '#ecfeff';
                     ctx.beginPath();
-                    ctx.moveTo(icicleX - 6, iceEndY - 40);
-                    ctx.lineTo(icicleX + 6, iceEndY - 40);
-                    ctx.lineTo(icicleX, iceEndY - 40 + icicleHeight);
+                    ctx.moveTo(icicleX - 5, iceEndY - 30);
+                    ctx.lineTo(icicleX + 5, iceEndY - 30);
+                    ctx.lineTo(icicleX, iceEndY - 30 + icicleHeight);
                     ctx.closePath();
                     ctx.fill();
                 });
@@ -1415,13 +1649,35 @@
                 canvas.classList.remove('hidden');
                 document.getElementById('gameUI').classList.remove('hidden');
                 
-                canvas.addEventListener('click', (e) => this.handleInput(e));
-                canvas.addEventListener('touchstart', (e) => this.handleInput(e), { passive: false });
+                // Eventos de joystick
+                canvas.addEventListener('mousedown', (e) => this.handleStart(e));
+                canvas.addEventListener('mousemove', (e) => Joystick.move(e));
+                canvas.addEventListener('mouseup', () => this.handleEnd());
+                canvas.addEventListener('mouseleave', () => this.handleEnd());
+                
+                canvas.addEventListener('touchstart', (e) => this.handleStart(e), { passive: false });
+                canvas.addEventListener('touchmove', (e) => Joystick.move(e), { passive: false });
+                canvas.addEventListener('touchend', () => this.handleEnd(), { passive: false });
+                canvas.addEventListener('touchcancel', () => this.handleEnd(), { passive: false });
                 
                 Cityscape.init();
                 this.reset();
                 gameState = 'ready';
                 this.loop();
+            },
+            
+            handleStart(e) {
+                e.preventDefault();
+                
+                if (gameState === 'ready') {
+                    this.startGame();
+                } else if (gameState === 'playing' && !player.isDead) {
+                    Joystick.start(e);
+                }
+            },
+            
+            handleEnd() {
+                Joystick.end();
             },
             
             resizeCanvas() {
@@ -1451,8 +1707,9 @@
             
             reset() {
                 player.x = -80;
-                player.y = canvas.height - 170;
-                player.velocity = 0;
+                player.y = canvas.height - 140;
+                player.velocityX = 0;
+                player.velocityY = 0;
                 player.rotation = 0;
                 player.isDead = false;
                 player.fartClouds = [];
@@ -1469,22 +1726,14 @@
                 CONFIG.pipeSpeed = CONFIG.initialSpeed;
                 CONFIG.baseSpeed = CONFIG.initialSpeed;
                 CONFIG.gravity = CONFIG.baseGravity;
+                CONFIG.impulseForce = CONFIG.baseImpulse;
                 
                 doorAnimation = { active: false, progress: 0, doorOpen: 0, playerEntered: false };
+                joystick.active = false;
+                joystick.visible = false;
                 
                 document.getElementById('scoreDisplay').textContent = '0';
                 LevelSystem.updateDisplay();
-            },
-            
-            handleInput(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                
-                if (gameState === 'ready') {
-                    this.startGame();
-                } else if (gameState === 'playing' && !player.isDead) {
-                    this.jump();
-                }
             },
             
             startGame() {
@@ -1493,42 +1742,22 @@
                 Audio.playDoorOpen();
             },
             
-            jump() {
-                player.velocity = CONFIG.jumpForce;
-                Audio.playFart();
-                
-                player.fartClouds.push({
-                    x: player.x,
-                    y: player.y + player.height - 5,
-                    size: 20,
-                    opacity: 1,
-                    particles: Array.from({length: 6}, () => ({
-                        x: Math.random() * 25 - 12,
-                        y: Math.random() * 15,
-                        size: 6 + Math.random() * 12,
-                        speed: 1.5 + Math.random() * 2.5
-                    }))
-                });
-            },
-            
             update() {
                 animationTime += 0.1;
                 
-                // Actualizar paisaje urbano
                 Cityscape.update();
                 
-                // Actualizar nubes de pedo
+                // Actualizar nubes de pedo con dirección
                 player.fartClouds.forEach(cloud => {
-                    cloud.opacity -= 0.02;
-                    cloud.size += 0.5;
+                    cloud.opacity -= 0.025;
+                    cloud.size += 0.3;
                     cloud.particles.forEach(p => {
-                        p.x -= p.speed;
-                        p.y += (Math.random() - 0.5) * 0.5;
+                        p.x += Math.cos(p.angle) * p.speed;
+                        p.y += Math.sin(p.angle) * p.speed;
                     });
                 });
                 player.fartClouds = player.fartClouds.filter(c => c.opacity > 0);
                 
-                // Actualizar gotas
                 meltingDrops.forEach(drop => {
                     drop.y += drop.speed;
                     drop.opacity -= 0.01;
@@ -1542,10 +1771,15 @@
                 
                 if (gameState !== 'playing' || player.isDead) return;
                 
-                // Física del jugador con gravedad progresiva
-                player.velocity += CONFIG.gravity;
-                player.y += player.velocity;
-                player.rotation = Math.min(Math.max(player.velocity * 3, -30), 90);
+                // Física del jugador con movimiento 2D
+                player.velocityY += CONFIG.gravity;
+                player.velocityX *= 0.98; // Fricción horizontal
+                
+                player.x += player.velocityX;
+                player.y += player.velocityY;
+                
+                // Mantener al jugador en la zona de juego horizontalmente
+                player.x = Math.max(50, Math.min(canvas.width * 0.4, player.x));
                 
                 // Spawn de obstáculos
                 const now = Date.now();
@@ -1566,12 +1800,12 @@
                         LevelSystem.checkLevelUp();
                     }
                     
-                    if (!pipe.isCheckpoint && Math.random() < 0.03) {
+                    if (!pipe.isCheckpoint && Math.random() < 0.02) {
                         meltingDrops.push({
                             x: pipe.x + Math.random() * CONFIG.pipeWidth,
-                            y: pipe.gapY + CONFIG.pipeGap + 20,
+                            y: pipe.gapY + CONFIG.pipeGap + 15,
                             speed: 2 + Math.random() * 2,
-                            size: 3 + Math.random() * 3,
+                            size: 2 + Math.random() * 2,
                             opacity: 1
                         });
                     }
@@ -1583,31 +1817,31 @@
             },
             
             updateDoorAnimation() {
-                doorAnimation.progress += 0.02;
+                doorAnimation.progress += 0.025;
                 
                 if (doorAnimation.progress < 0.4) {
                     doorAnimation.doorOpen = doorAnimation.progress / 0.4;
                 } else if (!doorAnimation.playerEntered) {
                     doorAnimation.playerEntered = true;
-                    player.x = 60;
-                    player.y = canvas.height - 170;
+                    player.x = 50;
+                    player.y = canvas.height - 140;
                 }
                 
                 if (doorAnimation.playerEntered) {
-                    player.x += 2;
+                    player.x += 1.5;
                     
-                    if (player.x >= 100) {
+                    if (player.x >= 80) {
                         gameState = 'playing';
-                        player.x = 100;
-                        player.y = 250;
+                        player.x = 80;
+                        player.y = 280;
                         lastPipeSpawn = Date.now();
                     }
                 }
             },
             
             spawnPipe() {
-                const minGapY = 120;
-                const maxGapY = canvas.height - CONFIG.pipeGap - 120;
+                const minGapY = 100;
+                const maxGapY = canvas.height - CONFIG.pipeGap - 100;
                 const gapY = minGapY + Math.random() * (maxGapY - minGapY);
                 
                 pipeCounter++;
@@ -1621,16 +1855,16 @@
             },
             
             checkCollisions() {
-                if (player.y < 0 || player.y + player.height > canvas.height) {
+                if (player.y < 0 || player.y + player.height > canvas.height - 15) {
                     this.die();
                     return;
                 }
                 
                 const box = {
-                    x: player.x + 15,
-                    y: player.y + 15,
-                    width: player.width - 30,
-                    height: player.height - 30
+                    x: player.x + 12,
+                    y: player.y + 10,
+                    width: player.width - 24,
+                    height: player.height - 20
                 };
                 
                 for (const pipe of pipes) {
@@ -1652,16 +1886,19 @@
                 
                 for (let i = 0; i < 4; i++) {
                     setTimeout(() => {
+                        const angle = Math.random() * Math.PI * 2;
                         player.fartClouds.push({
-                            x: player.x - 10 + i * 8,
-                            y: player.y + player.height,
-                            size: 35 + i * 12,
+                            x: player.x + player.width / 2,
+                            y: player.y + player.height / 2,
+                            angle: angle,
+                            size: 30 + i * 10,
                             opacity: 1,
                             particles: Array.from({length: 10}, () => ({
-                                x: Math.random() * 40 - 20,
-                                y: Math.random() * 25,
-                                size: 10 + Math.random() * 18,
-                                speed: 2.5 + Math.random() * 3
+                                x: 0,
+                                y: 0,
+                                size: 8 + Math.random() * 15,
+                                speed: 2 + Math.random() * 3,
+                                angle: angle + (Math.random() - 0.5) * 1
                             }))
                         });
                     }, i * 80);
@@ -1700,6 +1937,9 @@
                     Renderer.drawPlayer();
                 }
                 
+                // Dibujar joystick
+                Joystick.draw();
+                
                 if (gameState === 'ready') {
                     Renderer.drawReadyMessage();
                 }
@@ -1716,7 +1956,6 @@
         document.addEventListener('DOMContentLoaded', () => {
             ImageCropper.init();
             
-            // Selector de sonido de pedo
             const fartButtons = document.querySelectorAll('.fart-btn');
             fartButtons.forEach(btn => {
                 btn.addEventListener('click', () => {
@@ -1726,7 +1965,6 @@
                 });
             });
             
-            // Botón para probar sonido
             document.getElementById('testFartBtn').addEventListener('click', () => {
                 Audio.playFart(selectedFart);
             });
@@ -1752,11 +1990,9 @@
                 if (e.code === 'Space') {
                     e.preventDefault();
                     if (gameState === 'ready') Game.startGame();
-                    else if (gameState === 'playing' && !player.isDead) Game.jump();
                 }
             });
             
-            // Prevenir zoom en móviles
             let lastTouchEnd = 0;
             document.addEventListener('touchend', (e) => {
                 const now = Date.now();
