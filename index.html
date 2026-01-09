@@ -115,8 +115,8 @@
     <canvas id="gameCanvas" class="hidden"></canvas>
     
     <!-- UI del juego -->
-    <div id="gameUI" class="hidden fixed top-4 left-1/2 -translate-x-1/2 text-center">
-        <div class="text-6xl text-white font-extrabold drop-shadow-lg" id="scoreDisplay">0</div>
+    <div id="gameUI" class="hidden fixed top-4 left-1/2 -translate-x-1/2 text-center z-40">
+        <div class="text-6xl text-white font-extrabold drop-shadow-lg" id="scoreDisplay" style="text-shadow: 0 0 20px rgba(0,0,0,0.8), 0 4px 8px rgba(0,0,0,0.5);">0</div>
     </div>
     
     <!-- Game Over -->
@@ -376,15 +376,38 @@
             canvas = document.getElementById('gameCanvas');
             ctx = canvas.getContext('2d');
             
-            // Ajustar tamaño del canvas para móviles
-            const maxWidth = Math.min(400, window.innerWidth - 20);
-            const maxHeight = Math.min(600, window.innerHeight - 100);
-            const scale = Math.min(maxWidth / 400, maxHeight / 600);
+            // Calcular el tamaño óptimo para llenar la pantalla
+            const margin = 16; // Margen en píxeles
+            const availableWidth = window.innerWidth - (margin * 2);
+            const availableHeight = window.innerHeight - (margin * 2);
             
+            // Proporción del juego (2:3)
+            const gameRatio = 2 / 3;
+            const screenRatio = availableWidth / availableHeight;
+            
+            let displayWidth, displayHeight;
+            
+            if (screenRatio > gameRatio) {
+                // La pantalla es más ancha, limitamos por altura
+                displayHeight = availableHeight;
+                displayWidth = displayHeight * gameRatio;
+            } else {
+                // La pantalla es más alta, limitamos por ancho
+                displayWidth = availableWidth;
+                displayHeight = displayWidth / gameRatio;
+            }
+            
+            // El canvas interno mantiene proporciones fijas para la lógica del juego
             canvas.width = 400;
             canvas.height = 600;
-            canvas.style.width = (400 * scale) + 'px';
-            canvas.style.height = (600 * scale) + 'px';
+            
+            // El tamaño visual se adapta a la pantalla
+            canvas.style.width = displayWidth + 'px';
+            canvas.style.height = displayHeight + 'px';
+            canvas.style.position = 'fixed';
+            canvas.style.top = '50%';
+            canvas.style.left = '50%';
+            canvas.style.transform = 'translate(-50%, -50%)';
             
             document.getElementById('startScreen').classList.add('hidden');
             canvas.classList.remove('hidden');
@@ -401,6 +424,32 @@
             gameState = 'playing';
             gameLoop();
         }
+        
+        // Reajustar canvas cuando cambia la orientación o tamaño de ventana
+        window.addEventListener('resize', () => {
+            if (gameState === 'playing' || gameState === 'gameover') {
+                const margin = 16;
+                const availableWidth = window.innerWidth - (margin * 2);
+                const availableHeight = window.innerHeight - (margin * 2);
+                const gameRatio = 2 / 3;
+                const screenRatio = availableWidth / availableHeight;
+                
+                let displayWidth, displayHeight;
+                
+                if (screenRatio > gameRatio) {
+                    displayHeight = availableHeight;
+                    displayWidth = displayHeight * gameRatio;
+                } else {
+                    displayWidth = availableWidth;
+                    displayHeight = displayWidth / gameRatio;
+                }
+                
+                if (canvas) {
+                    canvas.style.width = displayWidth + 'px';
+                    canvas.style.height = displayHeight + 'px';
+                }
+            }
+        });
         
         function handleInteraction(e) {
             e.preventDefault();
@@ -1037,6 +1086,10 @@
             document.getElementById('gameOverScreen').classList.add('hidden');
             document.getElementById('gameUI').classList.add('hidden');
             canvas.classList.add('hidden');
+            canvas.style.position = '';
+            canvas.style.top = '';
+            canvas.style.left = '';
+            canvas.style.transform = '';
             document.getElementById('startScreen').classList.remove('hidden');
             gameState = 'menu';
         });
