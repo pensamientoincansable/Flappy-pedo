@@ -274,9 +274,10 @@
             gravity: 0.08,
             gravityIncrement: 0.005,
             
-            // Fuerza de impulso base
-            baseImpulse: 6,
-            impulseForce: 6,
+            // Fuerza de impulso - TAP es más fuerte, joystick más suave
+            baseImpulse: 4.5,
+            impulseForce: 4.5,
+            tapImpulse: 7.5,  // Impulso fuerte para TAP simple
             
             // Espacio ENORME entre obstáculos
             pipeGap: 280,
@@ -1060,15 +1061,16 @@
             end() {
                 if (!joystick.active) return;
                 
+                // Joystick usa impulso más suave y controlado
                 if (joystick.power > 0.15) {
                     const impulseX = -Math.cos(joystick.angle) * CONFIG.impulseForce * joystick.power;
                     const impulseY = -Math.sin(joystick.angle) * CONFIG.impulseForce * joystick.power;
                     
-                    player.velocityX += impulseX * 0.4;
-                    player.velocityY += impulseY;
+                    player.velocityX += impulseX * 0.5;
+                    player.velocityY += impulseY * 1.2;
                     
-                    player.velocityX = Math.max(-4, Math.min(4, player.velocityX));
-                    player.velocityY = Math.max(-10, Math.min(10, player.velocityY));
+                    player.velocityX = Math.max(-3, Math.min(3, player.velocityX));
+                    player.velocityY = Math.max(-8, Math.min(8, player.velocityY));
                     
                     Audio.playFart();
                     
@@ -1696,9 +1698,9 @@
                 
                 const touchDuration = Date.now() - touchStartTime;
                 
-                // TAP SIMPLE = impulso hacia arriba
+                // TAP SIMPLE = impulso FUERTE hacia arriba
                 if (isTap && touchDuration < 250 && joystick.power < 0.15) {
-                    player.velocityY = -CONFIG.impulseForce;
+                    player.velocityY = -CONFIG.tapImpulse;
                     Audio.playFart();
                     
                     player.fartClouds.push({
@@ -1775,6 +1777,7 @@
                 CONFIG.baseSpeed = CONFIG.initialSpeed;
                 CONFIG.gravity = CONFIG.baseGravity;
                 CONFIG.impulseForce = CONFIG.baseImpulse;
+                CONFIG.tapImpulse = 7.5;
                 
                 doorAnimation = { active: false, progress: 0, doorOpen: 0, playerEntered: false };
                 joystick.active = false;
